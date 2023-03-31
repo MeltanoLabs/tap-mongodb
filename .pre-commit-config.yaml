@@ -1,0 +1,42 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.2.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-toml
+      - id: check-vcs-permalinks
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: name-tests-test
+      - id: pretty-format-json
+        args:
+          - --autofix
+          - --indent
+          - '2'
+      - id: trailing-whitespace
+  - repo: https://github.com/lyz-code/yamlfix.git
+    rev: 1.9.0
+    hooks:
+      - id: yamlfix
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.28.0
+    hooks:
+      - id: yamllint
+        args:
+          - --format
+          - parsable
+          - --strict
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.0.252
+    hooks:
+      - id: ruff
+        args:
+          - --fix
+          - --exit-non-zero-on-fix
+  - repo: https://github.com/psf/black
+    rev: 23.1.0
+    hooks:
+      - id: black
+        language_version: python3.11
