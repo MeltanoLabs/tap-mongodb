@@ -15,8 +15,9 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "<3.12,>=3.7.1"
-singer-sdk = { version="^0.22.1" }
+singer-sdk = { version = "^0.22.1" }
 fs-s3fs = { version = "^1.1.1", optional = true }
+pymongo = "^4.3.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.1"
@@ -26,15 +27,10 @@ black = "^23.1.0"
 pyupgrade = "^3.3.1"
 mypy = "^1.0.0"
 isort = "^5.11.5"
-singer-sdk = { version="^0.22.1", extras = ["testing"] }
+singer-sdk = { version = "^0.22.1", extras = ["testing"] }
 
 [tool.poetry.extras]
 s3 = ["fs-s3fs"]
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3 # Vertical Hanging Indent
-src_paths = "tap_mongodb"
 
 [tool.mypy]
 python_version = "3.9"
@@ -46,11 +42,11 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 # CLI declaration
-tap-mongodb = 'tap_mongodb.tap:Tapmongodb.cli'
+tap-mongodb = 'tap_mongodb.tap:TapMongoDB.cli'
 
 [tool.yamlfix]
 comments_min_spaces_from_content = 2
-comments_require_starting_space= true
+comments_require_starting_space = true
 explicit_start = false
 sequence_style = 'block_style'
 indent_mapping = 2
@@ -59,3 +55,20 @@ indent_sequence = 4
 line_length = 180
 quote_basic_values = false
 quote_keys_and_basic_values = false
+
+[tool.ruff]
+select = [
+    "E",
+    "F",
+    "RUF",
+]
+exclude = [
+    ".meltano",
+    ".secrets",
+    "output",
+]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.isort]
+known-third-party = ["pymongo"]

@@ -7,7 +7,7 @@ from typing import Iterable
 from singer_sdk.streams import Stream
 
 
-class mongodbStream(Stream):
+class CollectionStream(Stream):
     """Stream class for mongodb streams."""
 
     def get_records(self, context: dict | None) -> Iterable[dict]:
