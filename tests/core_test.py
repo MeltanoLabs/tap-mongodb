@@ -14,10 +14,7 @@ SAMPLE_CONFIG = {
 
 
 # Run standard built-in tap tests from the SDK:
-TestTapmongodb = get_tap_test_class(
-    tap_class=Tapmongodb,
-    config=SAMPLE_CONFIG
-)
+TestTapmongodb = get_tap_test_class(tap_class=Tapmongodb, config=SAMPLE_CONFIG)
 
 
 # TODO: Create additional tests as appropriate for your tap.
