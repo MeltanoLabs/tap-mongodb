@@ -16,11 +16,12 @@ plugins:
         - about
         - stream-maps
       config:
+        mongodb_connection_string: mongodb://admin:password@localhost:27017?replicaSet=rs0
         start_date: '2010-01-01T00:00:00Z'
+        database_includes:
+          - test_database
       settings:
-        # TODO: To configure using Meltano, declare settings and their types here:
-        - name: username
-        - name: password
+        - name: mongodb_connection_string
           kind: password
         - name: start_date
           value: '2010-01-01T00:00:00Z'
