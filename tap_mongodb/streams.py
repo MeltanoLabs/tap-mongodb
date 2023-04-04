@@ -7,6 +7,7 @@ from typing import Iterable, Any
 
 from singer_sdk import PluginBase as TapBaseClass, _singerlib as singer
 from singer_sdk.streams import Stream
+from bson.objectid import ObjectId
 from pymongo.collection import Collection
 from pymongo import ASCENDING
 from singer_sdk.streams.core import (
@@ -19,6 +20,7 @@ class CollectionStream(Stream):
 
     # The output stream will always have _id as the primary key
     primary_keys = ["_id"]
+    replication_key = "_id"
 
     # Disable timestamp replication keys. One caveat is this relies on an
     # alphanumerically sortable replication key. Python __gt__ and __lt__ are
@@ -41,8 +43,19 @@ class CollectionStream(Stream):
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
         bookmark = self.get_starting_replication_key_value(context)
-        self.logger.info(f"collection name: {self._collection.name}")
+        self.logger.info(f"bookmark: {bookmark}")
         if bookmark is None:
             for record in self._collection.find({}).sort([("_id", ASCENDING)]):
+                object_id: ObjectId = record["_id"]
                 self.logger.info(f"record: {record}")
-                yield {"_id": record["_id"], "document": record}
+                self.logger.info(f"object_id: {object_id}")
+                self.logger.info(f"str(object_id): {str(object_id)}")
+                yield {"_id": str(object_id), "document": record}
+        elif bookmark is not None:
+            # TODO how to turn "bookmark" into an object ID _id that can be compared against?
+            for record in self._collection.find({}).sort([("_id", ASCENDING)]):
+                object_id: ObjectId = record["_id"]
+                self.logger.info(f"record: {record}")
+                self.logger.info(f"object_id: {object_id}")
+                self.logger.info(f"str(object_id): {str(object_id)}")
+                yield {"_id": str(object_id), "document": record}
