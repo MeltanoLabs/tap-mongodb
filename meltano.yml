@@ -17,14 +17,19 @@ plugins:
         - stream-maps
       config:
         mongodb_connection_string: mongodb://admin:password@localhost:27017?replicaSet=rs0
-        start_date: '2010-01-01T00:00:00Z'
         database_includes:
           - test_database
       settings:
         - name: mongodb_connection_string
           kind: password
-        - name: start_date
-          value: '2010-01-01T00:00:00Z'
+        - name: mongodb_connection_string_file
+          kind: file
+        - name: mongodb_max_await_time_ms
+          kind: integer
+      metadata:
+        test_database_TestDocument:
+          replication-key: _id
+          replication-method: INCREMENTAL
   loaders:
     - name: target-jsonl
       variant: andyh1203

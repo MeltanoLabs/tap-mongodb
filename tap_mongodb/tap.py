@@ -61,6 +61,12 @@ class TapMongoDB(Tap):
                 " will be excluded."
             ),
         ),
+        th.Property(
+            "mongodb_max_await_time_ms",
+            th.IntegerType,
+            required=False,
+            description="Path (relative or absolute) to a file containing a MongoDB connection string URI.",
+        ),
     ).to_dict()
 
     def get_mongo_config(self) -> str | None:
@@ -135,7 +141,7 @@ class TapMongoDB(Tap):
                     )
                     continue
                 self.logger.info("Discovered collection %s.%s", db_name, collection)
-                stream_name = f"{collection}"
+                stream_name = f"{db_name}_{collection}"
                 entry = CatalogEntry.from_dict({"tap_stream_id": stream_name})
                 entry.stream = stream_name
                 schema = {
@@ -158,7 +164,9 @@ class TapMongoDB(Tap):
                 entry.schema = entry.schema.from_dict(schema)
                 entry.key_properties = ["_id"]
                 entry.metadata = entry.metadata.get_standard_metadata(
-                    schema=schema, key_properties=["_id"]
+                    schema=schema,
+                    key_properties=["_id"],
+                    valid_replication_keys=["_id"],
                 )
                 entry.database = db_name
                 entry.table = collection
