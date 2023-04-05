@@ -17,7 +17,6 @@ from singer_sdk.streams.core import (
     REPLICATION_LOG_BASED,
     REPLICATION_INCREMENTAL,
 )
-from singer_sdk.helpers._state import get_starting_replication_value
 from singer_sdk._singerlib.utils import strptime_to_utc
 
 
@@ -27,6 +26,7 @@ class CollectionStream(Stream):
     # The output stream will always have _id as the primary key
     primary_keys = ["_id"]
     replication_key = "_id"
+    is_sorted = False
 
     # Disable timestamp replication keys. One caveat is this relies on an
     # alphanumerically sortable replication key. Python __gt__ and __lt__ are
@@ -48,53 +48,59 @@ class CollectionStream(Stream):
         self._collection: Collection = collection
         self._max_await_time_ms = max_await_time_ms
 
-    def get_starting_replication_key_value(
-        self, context: dict | None
-    ) -> ObjectId | str | None:
-        state = self.get_context_state(context)
-        replication_key_value = get_starting_replication_value(state)
-
-        if self.replication_method == REPLICATION_INCREMENTAL:
-            if replication_key_value:
-                try:
-                    return ObjectId(replication_key_value)
-                except InvalidId:
-                    self.logger.warning(
-                        f"Replication key value {replication_key_value} cannot be parsed into ObjectId."
-                    )
-            start_date_str = self.config.get("start_date", "1970-01-01")
-            start_date: datetime = strptime_to_utc(start_date_str)
-            return ObjectId.from_datetime(start_date)
-        elif self.replication_method == REPLICATION_LOG_BASED:
-            return replication_key_value
-        else:
-            msg = f"Unrecognized replication strategy {self.replication_method}"
-            self.logger.critical(msg)
-            raise RuntimeError(msg)
-
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
-        bookmark = self.get_starting_replication_key_value(context)
+        bookmark: str = self.get_starting_replication_key_value(context)
+        self.logger.info(f"a: bookmark {bookmark}")
+        self.logger.info(f"a: replication_method {self.replication_method}")
 
         if self.replication_method == REPLICATION_INCREMENTAL:
-            if bookmark is None:
-                for record in self._collection.find({}).sort([("_id", ASCENDING)]):
-                    object_id: ObjectId = record["_id"]
-                    yield {"_id": str(object_id), "document": record}
-            elif bookmark is not None and isinstance(bookmark, ObjectId):
-                for record in self._collection.find({"_id": {"$gt": bookmark}}).sort(
-                    [("_id", ASCENDING)]
-                ):
-                    object_id: ObjectId = record["_id"]
-                    yield {"_id": str(object_id), "document": record}
+            start_date: ObjectId | None = None
+            if bookmark:
+                try:
+                    start_date = ObjectId(bookmark)
+                except InvalidId:
+                    self.logger.warning(
+                        f"Replication key value {bookmark} cannot be parsed into ObjectId."
+                    )
+            else:
+                start_date_str = self.config.get("start_date", "1970-01-01")
+                self.logger.info(f"using start_date_str: {start_date_str}")
+                start_date_dt: datetime = strptime_to_utc(start_date_str)
+                start_date = ObjectId.from_datetime(start_date_dt)
+
+            for record in self._collection.find({"_id": {"$gt": start_date}}).sort(
+                [("_id", ASCENDING)]
+            ):
+                object_id: ObjectId = record["_id"]
+                yield {"_id": str(object_id), "document": record}
 
         elif self.replication_method == REPLICATION_LOG_BASED:
-            if bookmark is None:
-                with self._collection.watch(
-                    full_document="updateLookup"
-                ) as change_stream:
-                    for record in change_stream:
-                        self.logger.info(f"b change_stream record: {record}")
+            self.logger.info(f"m: bookmark {bookmark}")
+            change_stream_options = {"full_document": "updateLookup"}
+            self.logger.info(f"m: bookmark {bookmark}")
+            self.logger.info(f"m: type(bookmark) {type(bookmark)}")
+            if bookmark is not None:
+                change_stream_options["resume_after"] = {"_data": bookmark}
+            self.logger.info(f"m: change_stream_options {change_stream_options}")
+            with self._collection.watch(**change_stream_options) as change_stream:
+                while change_stream.alive:
+                    self.logger.info(f"b change_stream.alive: {change_stream.alive}")
+                    record = change_stream.try_next()
+                    if record is None:
+                        self.logger.info(f"b record is None: {record}")
+                        self.logger.info(
+                            f'b change_stream.resume_token["_data"]: {change_stream.resume_token["_data"]}'
+                        )
+                        yield {
+                            "_id": change_stream.resume_token["_data"],
+                            "document": None,
+                        }
+                        change_stream.close()
+                    if record is not None:
+                        self.logger.info(
+                            f"b change_stream record is not None: {record}"
+                        )
                         yield {
                             "_id": record["_id"]["_data"],
                             "document": record["fullDocument"],
@@ -104,22 +110,7 @@ class CollectionStream(Stream):
                             ),
                             "ns": record["ns"],
                         }
-            elif bookmark is not None and isinstance(bookmark, str):
-                resume_token = {"_data": bookmark}
-                with self._collection.watch(
-                    full_document="updateLookup", resume_after=resume_token
-                ) as change_stream:
-                    for record in change_stream:
-                        self.logger.info(f"b change_stream record: {record}")
-                        yield {
-                            "_id": record["_id"]["_data"],
-                            "document": record["fullDocument"],
-                            "operationType": record["operationType"],
-                            "clusterTime": int(
-                                record["clusterTime"].as_datetime().timestamp()
-                            ),
-                            "ns": record["ns"],
-                        }
+
         else:
             msg = f"Unrecognized replication strategy {self.replication_method}"
             self.logger.critical(msg)

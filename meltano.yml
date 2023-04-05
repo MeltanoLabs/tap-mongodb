@@ -30,11 +30,12 @@ plugins:
         - name: start_date
           kind: date_iso8601
           description: |
-            Start date - used for incremental replication only. Log based replication does not support this setting.
+            Start date - used for incremental replication only. Log based replication does not support this setting - do
+            not provide it unless you are using incremental replication.
       metadata:
         test_database_TestDocument:
           replication-key: _id
-          replication-method: INCREMENTAL
+          replication-method: LOG_BASED
   loaders:
     - name: target-jsonl
       variant: andyh1203
