@@ -34,6 +34,7 @@ plugins:
             not provide it unless you are using incremental replication.
       metadata:
         '*':
+          replication-key: _id
           replication-method: LOG_BASED
   loaders:
     - name: target-jsonl
