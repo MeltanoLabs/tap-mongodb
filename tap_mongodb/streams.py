@@ -26,7 +26,8 @@ class CollectionStream(Stream):
     # The output stream will always have _id as the primary key
     primary_keys = ["_id"]
     replication_key = "_id"
-    is_sorted = False
+    # is_sorted = False
+    # check_sorted = False
 
     # Disable timestamp replication keys. One caveat is this relies on an
     # alphanumerically sortable replication key. Python __gt__ and __lt__ are
@@ -83,8 +84,9 @@ class CollectionStream(Stream):
             if bookmark is not None:
                 change_stream_options["resume_after"] = {"_data": bookmark}
             self.logger.info(f"m: change_stream_options {change_stream_options}")
+            keep_open: bool = True
             with self._collection.watch(**change_stream_options) as change_stream:
-                while change_stream.alive:
+                while change_stream.alive and keep_open:
                     self.logger.info(f"b change_stream.alive: {change_stream.alive}")
                     record = change_stream.try_next()
                     if record is None:
@@ -96,7 +98,10 @@ class CollectionStream(Stream):
                             "_id": change_stream.resume_token["_data"],
                             "document": None,
                         }
-                        change_stream.close()
+                        self.logger.info("b after yield, before close")
+                        # change_stream.close()
+                        keep_open = False
+                        self.logger.info("b after yield, after close")
                     if record is not None:
                         self.logger.info(
                             f"b change_stream record is not None: {record}"

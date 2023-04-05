@@ -98,9 +98,11 @@ class TapMongoDB(Tap):
     def catalog_dict(self) -> dict:
         # Use cached catalog if available
         if hasattr(self, "_catalog_dict") and self._catalog_dict:
+            self.logger.info(f"self._catalog_dict: {self._catalog_dict}")
             return self._catalog_dict
         # Defer to passed in catalog if available
         if self.input_catalog:
+            self.logger.info(f"self.input_catalog: {self.input_catalog}")
             return self.input_catalog.to_dict()
         db_includes = self.config.get("database_includes", [])
         db_excludes = self.config.get("database_excludes", [])
