@@ -33,8 +33,7 @@ plugins:
             Start date - used for incremental replication only. Log based replication does not support this setting - do
             not provide it unless you are using incremental replication.
       metadata:
-        test_database_TestDocument:
-          replication-key: _id
+        '*':
           replication-method: LOG_BASED
   loaders:
     - name: target-jsonl
