@@ -27,6 +27,10 @@ plugins:
           kind: file
         - name: mongodb_max_await_time_ms
           kind: integer
+        - name: start_date
+          kind: date_iso8601
+          description: |
+            Start date - used for incremental replication only. Log based replication does not support this setting.
       metadata:
         test_database_TestDocument:
           replication-key: _id
