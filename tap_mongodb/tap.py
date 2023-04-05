@@ -10,7 +10,6 @@ from pathlib import Path
 from singer_sdk import Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
 
-
 from singer_sdk._singerlib.catalog import Catalog, CatalogEntry
 
 from tap_mongodb.streams import CollectionStream
@@ -159,6 +158,25 @@ class TapMongoDB(Tap):
                             "additionalProperties": True,
                             "description": "The document from the collection",
                         },
+                        "operationType": {
+                            "type": [
+                                "string",
+                                "null",
+                            ]
+                        },
+                        "clusterTime": {
+                            "type": [
+                                "integer",
+                                "null",
+                            ]
+                        },
+                        "ns": {
+                            "type": [
+                                "object",
+                                "null",
+                            ],
+                            "additionalProperties": True,
+                        },
                     },
                 }
                 entry.schema = entry.schema.from_dict(schema)
@@ -194,6 +212,7 @@ class TapMongoDB(Tap):
                 name=entry.tap_stream_id,
                 schema=entry.schema,
                 collection=collection,
+                max_await_time_ms=self.config.get("mongodb_max_await_time_ms", None),
             )
             stream.apply_catalog(self.catalog)
             yield stream

@@ -6,6 +6,7 @@ from os import PathLike
 from typing import Iterable, Any
 from datetime import datetime
 
+import bson
 from singer_sdk import PluginBase as TapBaseClass, _singerlib as singer
 from singer_sdk.streams import Stream
 from bson.objectid import ObjectId
@@ -39,9 +40,11 @@ class CollectionStream(Stream):
         schema: str | PathLike | dict[str, Any] | singer.Schema | None = None,
         name: str | None = None,
         collection: Collection | None = None,
+        max_await_time_ms: int | None = None,
     ) -> None:
         super().__init__(tap, schema, name)
         self._collection: Collection = collection
+        self._max_await_time_ms = max_await_time_ms
 
     def get_starting_replication_key_value(
         self, context: dict | None
@@ -67,47 +70,59 @@ class CollectionStream(Stream):
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
         bookmark = self.get_starting_replication_key_value(context)
-        self.logger.info(f"bookmark: {bookmark}")
+        change_stream_opts: dict = {"full_document": "updateLookup"}
+        if self._max_await_time_ms is not None:
+            change_stream_opts["max_await_time_ms"] = self._max_await_time_ms
+        self.logger.info(f"change_stream_opts: {change_stream_opts}")
         if bookmark is None:
-            self.logger.info(f"a: {bookmark}")
             for record in self._collection.find({}).sort([("_id", ASCENDING)]):
                 object_id: ObjectId = record["_id"]
-                self.logger.info(f"record: {record}")
-                self.logger.info(f"object_id: {object_id}")
-                self.logger.info(f"str(object_id): {str(object_id)}")
-                self.logger.info("a before yield")
                 yield {"_id": str(object_id), "document": record}
-                self.logger.info("a after yield")
-                self.logger.info("a: we've iterated through the entire collection now")
-            self.logger.info("a after for loop")
-            with self._collection.watch() as change_stream:
-                self.logger.info("a: opened change stream")
+            with self._collection.watch(**change_stream_opts) as change_stream:
                 for record in change_stream:
-                    self.logger.info("a: got record in change stream")
-                    self.logger.info(f"a change_stream record: {record}")
+                    self.logger.info(f"b change_stream record: {record}")
+                    yield {
+                        "_id": record["_id"]["_data"],
+                        "document": record["fullDocument"],
+                        "operationType": record["operationType"],
+                        "clusterTime": int(
+                            record["clusterTime"].as_datetime().timestamp()
+                        ),
+                        "ns": record["ns"],
+                    }
         elif bookmark is not None and isinstance(bookmark, ObjectId):
-            self.logger.info(f"b: {bookmark}")
-            # TODO how to turn "bookmark" into an object ID _id that can be compared against?
             for record in self._collection.find({"_id": {"$gt": bookmark}}).sort(
                 [("_id", ASCENDING)]
             ):
                 object_id: ObjectId = record["_id"]
-                self.logger.info(f"record: {record}")
-                self.logger.info(f"object_id: {object_id}")
-                self.logger.info(f"str(object_id): {str(object_id)}")
-                self.logger.info("a after yield")
                 yield {"_id": str(object_id), "document": record}
-                self.logger.info("b after yield")
-                self.logger.info("b: we've iterated through the entire collection now")
-            self.logger.info("b after for loop")
-            with self._collection.watch(full_document="updateLookup") as change_stream:
-                self.logger.info("b: opened change stream")
+            with self._collection.watch(**change_stream_opts) as change_stream:
                 for record in change_stream:
-                    self.logger.info("b: got record in change stream")
                     self.logger.info(f"b change_stream record: {record}")
-        elif bookmark is not None:
-            self.logger.info(f"c: {bookmark}")
-            self.logger.info(f"type(bookmark): {type(bookmark)}")
+                    yield {
+                        "_id": record["_id"]["_data"],
+                        "document": record["fullDocument"],
+                        "operationType": record["operationType"],
+                        "clusterTime": int(
+                            record["clusterTime"].as_datetime().timestamp()
+                        ),
+                        "ns": record["ns"],
+                    }
+        elif bookmark is not None and isinstance(bookmark, str):
+            resume_token = bson.encode({"_data": bookmark})
+            change_stream_opts["resume_after"] = resume_token
+            with self._collection.watch(**change_stream_opts) as change_stream:
+                for record in change_stream:
+                    self.logger.info(f"b change_stream record: {record}")
+                    yield {
+                        "_id": record["_id"]["_data"],
+                        "document": record["fullDocument"],
+                        "operationType": record["operationType"],
+                        "clusterTime": int(
+                            record["clusterTime"].as_datetime().timestamp()
+                        ),
+                        "ns": record["ns"],
+                    }
         else:
             self.logger.info(f"d: {bookmark}")
             self.logger.info(f"else bookmark: {bookmark}")
