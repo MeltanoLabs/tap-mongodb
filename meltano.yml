@@ -17,16 +17,14 @@ plugins:
         - stream-maps
       config:
         mongodb_connection_string: mongodb://admin:password@localhost:27017?replicaSet=rs0
-        mongodb_max_await_time_ms: 5000
         database_includes:
-          - test_database
+          - database: autopay-service
+            collection: AutopayEnrollment
       settings:
         - name: mongodb_connection_string
           kind: password
         - name: mongodb_connection_string_file
           kind: file
-        - name: mongodb_max_await_time_ms
-          kind: integer
         - name: start_date
           kind: date_iso8601
           description: |

@@ -13,30 +13,40 @@ jobs:
           python-version-file: .python-version
       - name: Run pre-commit checks
         uses: pre-commit/action@v3.0.0
-  pytest:
+  test:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
     strategy:
       matrix:
+        mongo-version:
+          - 3.6
+          - 4.4
         python-version:
-          - 3.7
-          - 3.8
-          - 3.9
-          - '3.10'
           - 3.11
+        test-directory:
+          - incremental_empty_collection
+    services:
+      mongo:
+        image: mongo:${{ matrix.mongo-version}}
+        ports:
+          - 27017:27017
+        env:
+          MONGO_INITDB_ROOT_USERNAME: admin
+          MONGO_INITDB_ROOT_PASSWORD: password
+        options: >-
+          --health-cmd "mongo localhost:27017/test --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v3
+      - name: Install poetry
+        run: pipx install poetry
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Poetry
-        run: |
-          pip install poetry
+          cache: poetry
       - name: Install dependencies
-        run: |
-          poetry install
+        run: poetry install
       - name: Test with pytest
-        run: |-
-          poetry run pytest
+        run: poetry run pytest

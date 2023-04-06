@@ -46,25 +46,17 @@ class TapMongoDB(Tap):
         ),
         th.Property(
             "database_includes",
-            th.ArrayType(th.StringType),
+            th.ArrayType(
+                th.ObjectType(
+                    th.Property("database", th.StringType, required=True),
+                    th.Property("collection", th.StringType, required=True),
+                ),
+            ),
+            required=True,
             description=(
                 "A list of databases to include. If this list is empty, all databases"
                 " will be included."
             ),
-        ),
-        th.Property(
-            "database_excludes",
-            th.ArrayType(th.StringType),
-            description=(
-                "A list of databases to exclude. If this list is empty, no databases"
-                " will be excluded."
-            ),
-        ),
-        th.Property(
-            "mongodb_max_await_time_ms",
-            th.IntegerType,
-            required=False,
-            description="Path (relative or absolute) to a file containing a MongoDB connection string URI.",
         ),
     ).to_dict()
 
@@ -84,7 +76,7 @@ class TapMongoDB(Tap):
                     )
                     sys.exit(1)
 
-        return self.config.get("mongo", None)
+        return self.config.get("mongodb_connection_string", None)
 
     def get_mongo_client(self) -> MongoClient:
         client: MongoClient = MongoClient(self.get_mongo_config())
@@ -104,96 +96,77 @@ class TapMongoDB(Tap):
         if self.input_catalog:
             self.logger.info(f"self.input_catalog: {self.input_catalog}")
             return self.input_catalog.to_dict()
-        db_includes = self.config.get("database_includes", [])
-        db_excludes = self.config.get("database_excludes", [])
         catalog = Catalog()
         client: MongoClient = self.get_mongo_client()
-        for db_name in client.list_database_names():
-            if db_includes and db_name not in db_includes:
-                continue
-            if db_excludes and db_name in db_excludes:
-                continue
+        for included in self.config.get("database_includes", []):
+            db_name = included["database"]
+            collection = included["collection"]
             try:
-                collections = client[db_name].list_collection_names()
+                client[db_name][collection].find_one()
             except Exception:
-                # Skip databases that are not accessible by the authenticated user
+                # Skip collections that are not accessible by the authenticated user
                 # This is a common case when using a shared cluster
                 # https://docs.mongodb.com/manual/core/security-users/#database-user-privileges
                 # TODO: vet the list of exceptions that can be raised here to be more explicit
-                self.logger.debug(
-                    "Skipping database %s, authenticated user does not have permission to access",
-                    db_name,
+                self.logger.info(
+                    f"Skipping collections {db_name}.{collection}, authenticated user does not have permission to it."
                 )
                 continue
-            for collection in collections:
-                try:
-                    client[db_name][collection].find_one()
-                except Exception:
-                    # Skip collections that are not accessible by the authenticated user
-                    # This is a common case when using a shared cluster
-                    # https://docs.mongodb.com/manual/core/security-users/#database-user-privileges
-                    # TODO: vet the list of exceptions that can be raised here to be more explicit
-                    self.logger.debug(
-                        (
-                            "Skipping collections %s, authenticated user does not have permission"
-                            " to access"
-                        ),
-                        db_name,
-                    )
-                    continue
-                self.logger.info("Discovered collection %s.%s", db_name, collection)
-                stream_name = f"{db_name}_{collection}"
-                entry = CatalogEntry.from_dict({"tap_stream_id": stream_name})
-                entry.stream = stream_name
-                schema = {
-                    "type": "object",
-                    "properties": {
-                        "_id": {
-                            "type": [
-                                "string",
-                                "null",
-                            ],
-                            "description": "The document's _id",
-                        },
-                        "document": {
-                            "type": [
-                                "object",
-                                "null",
-                            ],
-                            "additionalProperties": True,
-                            "description": "The document from the collection",
-                        },
-                        "operationType": {
-                            "type": [
-                                "string",
-                                "null",
-                            ]
-                        },
-                        "clusterTime": {
-                            "type": [
-                                "integer",
-                                "null",
-                            ]
-                        },
-                        "ns": {
-                            "type": [
-                                "object",
-                                "null",
-                            ],
-                            "additionalProperties": True,
-                        },
+
+            self.logger.info("Discovered collection %s.%s", db_name, collection)
+            stream_name = f"{db_name}_{collection}"
+            entry = CatalogEntry.from_dict({"tap_stream_id": stream_name})
+            entry.stream = stream_name
+            schema = {
+                "type": "object",
+                "properties": {
+                    "_id": {
+                        "type": [
+                            "string",
+                            "null",
+                        ],
+                        "description": "The document's _id",
                     },
-                }
-                entry.schema = entry.schema.from_dict(schema)
-                entry.key_properties = ["_id"]
-                entry.metadata = entry.metadata.get_standard_metadata(
-                    schema=schema,
-                    key_properties=["_id"],
-                    valid_replication_keys=["_id"],
-                )
-                entry.database = db_name
-                entry.table = collection
-                catalog.add_stream(entry)
+                    "document": {
+                        "type": [
+                            "object",
+                            "null",
+                        ],
+                        "additionalProperties": True,
+                        "description": "The document from the collection",
+                    },
+                    "operationType": {
+                        "type": [
+                            "string",
+                            "null",
+                        ]
+                    },
+                    "clusterTime": {
+                        "type": [
+                            "integer",
+                            "null",
+                        ]
+                    },
+                    "ns": {
+                        "type": [
+                            "object",
+                            "null",
+                        ],
+                        "additionalProperties": True,
+                    },
+                },
+            }
+            entry.schema = entry.schema.from_dict(schema)
+            entry.key_properties = ["_id"]
+            entry.metadata = entry.metadata.get_standard_metadata(
+                schema=schema,
+                key_properties=["_id"],
+                valid_replication_keys=["_id"],
+            )
+            entry.database = db_name
+            entry.table = collection
+            catalog.add_stream(entry)
+
         self._catalog_dict = catalog.to_dict()
         return self._catalog_dict
 
@@ -204,20 +177,13 @@ class TapMongoDB(Tap):
             A list of discovered streams.
         """
         client: MongoClient = self.get_mongo_client()
-        db_includes = self.config.get("database_includes", [])
-        db_excludes = self.config.get("database_excludes", [])
         for entry in self.catalog.streams:
-            if entry.database in db_excludes:
-                continue
-            if db_includes and entry.database not in db_includes:
-                continue
             collection: Collection = client[entry.database][entry.table]
             stream = CollectionStream(
                 tap=self,
                 name=entry.tap_stream_id,
                 schema=entry.schema,
                 collection=collection,
-                max_await_time_ms=self.config.get("mongodb_max_await_time_ms", None),
             )
             stream.apply_catalog(self.catalog)
             yield stream

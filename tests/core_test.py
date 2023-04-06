@@ -4,7 +4,7 @@ import datetime
 
 from singer_sdk.testing import get_tap_test_class
 
-from tap_mongodb.tap import Tapmongodb
+from tap_mongodb.tap import TapMongoDB
 
 
 SAMPLE_CONFIG = {
@@ -14,7 +14,7 @@ SAMPLE_CONFIG = {
 
 
 # Run standard built-in tap tests from the SDK:
-TestTapmongodb = get_tap_test_class(tap_class=Tapmongodb, config=SAMPLE_CONFIG)
+TestTapMongoDB = get_tap_test_class(tap_class=TapMongoDB, config=SAMPLE_CONFIG)
 
 
 # TODO: Create additional tests as appropriate for your tap.

@@ -42,11 +42,9 @@ class CollectionStream(Stream):
         schema: str | PathLike | dict[str, Any] | singer.Schema | None = None,
         name: str | None = None,
         collection: Collection | None = None,
-        max_await_time_ms: int | None = None,
     ) -> None:
         super().__init__(tap, schema, name)
         self._collection: Collection = collection
-        self._max_await_time_ms = max_await_time_ms
 
     def _increment_stream_state(
         self, latest_record: dict[str, Any], *, context: dict | None = None
@@ -55,9 +53,6 @@ class CollectionStream(Stream):
 
         Raises `InvalidStreamSortException` is `self.is_sorted = True` and unsorted data
         is detected.
-
-        Note: The default implementation does not advance any bookmarks unless
-        `self.replication_method == 'INCREMENTAL'.
 
         Args:
             latest_record: TODO
@@ -90,8 +85,6 @@ class CollectionStream(Stream):
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
         bookmark: str = self.get_starting_replication_key_value(context)
-        self.logger.info(f"a: bookmark {bookmark}")
-        self.logger.info(f"a: replication_method {self.replication_method}")
 
         if self.replication_method == REPLICATION_INCREMENTAL:
             start_date: ObjectId | None = None
@@ -115,35 +108,29 @@ class CollectionStream(Stream):
                 yield {"_id": str(object_id), "document": record}
 
         elif self.replication_method == REPLICATION_LOG_BASED:
-            self.logger.info(f"m: bookmark {bookmark}")
             change_stream_options = {"full_document": "updateLookup"}
-            self.logger.info(f"m: bookmark {bookmark}")
-            self.logger.info(f"m: type(bookmark) {type(bookmark)}")
             if bookmark is not None:
                 change_stream_options["resume_after"] = {"_data": bookmark}
-            self.logger.info(f"m: change_stream_options {change_stream_options}")
             keep_open: bool = True
             with self._collection.watch(**change_stream_options) as change_stream:
                 while change_stream.alive and keep_open:
-                    self.logger.info(f"b change_stream.alive: {change_stream.alive}")
                     record = change_stream.try_next()
+                    resume_token = change_stream.resume_token
+                    self.logger.info(f"b change_stream.resume_token: {resume_token}")
                     if record is None:
-                        self.logger.info(f"b record is None: {record}")
-                        self.logger.info(
-                            f'b change_stream.resume_token["_data"]: {change_stream.resume_token["_data"]}'
-                        )
+                        if change_stream.resume_token is not None:
+                            record_id = change_stream.resume_token["_data"]
+                        else:
+                            record_id = None
+                            self.logger.warning(
+                                "Change stream resume_token is missing."
+                            )
                         yield {
-                            "_id": change_stream.resume_token["_data"],
+                            "_id": record_id,
                             "document": None,
                         }
-                        self.logger.info("b after yield, before close")
-                        # change_stream.close()
                         keep_open = False
-                        self.logger.info("b after yield, after close")
                     if record is not None:
-                        self.logger.info(
-                            f"b change_stream record is not None: {record}"
-                        )
                         yield {
                             "_id": record["_id"]["_data"],
                             "document": record["fullDocument"],
