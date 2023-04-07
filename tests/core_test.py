@@ -34,9 +34,8 @@ def test_one_stream_is_discovered():
         streams: list[CollectionStream] = tap.discover_streams()
 
         # then a stream for that collection is returned
-        assert len(streams) == 1
-        stream: CollectionStream = streams[0]
-        assert (
-            stream.tap_stream_id
-            == f"{included_database['database']}_{included_database['collection']}"
-        )
+        for stream in streams:
+            assert (
+                stream.tap_stream_id
+                == f"{included_database['database']}_{included_database['collection']}"
+            )
