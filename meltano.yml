@@ -16,7 +16,7 @@ plugins:
         - about
         - stream-maps
       config:
-        mongodb_connection_string: mongodb://admin:password@localhost:27017?replicaSet=rs0
+        mongodb_connection_string: mongodb://admin:password@localhost:27017/
         database_includes:
           - database: test_service
             collection: TestDocument
