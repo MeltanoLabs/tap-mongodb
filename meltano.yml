@@ -18,8 +18,8 @@ plugins:
       config:
         mongodb_connection_string: mongodb://admin:password@localhost:27017?replicaSet=rs0
         database_includes:
-          - database: autopay-service
-            collection: AutopayEnrollment
+          - database: test_service
+            collection: TestDocument
       settings:
         - name: mongodb_connection_string
           kind: password

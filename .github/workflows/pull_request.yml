@@ -22,8 +22,6 @@ jobs:
           - 4.4
         python-version:
           - 3.11
-        test-directory:
-          - incremental_empty_collection
     services:
       mongo:
         image: mongo:${{ matrix.mongo-version}}
