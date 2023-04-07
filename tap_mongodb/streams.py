@@ -65,6 +65,17 @@ class CollectionStream(Stream):
         state_dict = self.get_context_state(context)
 
         # Advance state bookmark values if applicable
+        if self.replication_method not in {
+            REPLICATION_INCREMENTAL,
+            REPLICATION_LOG_BASED,
+        }:
+            msg = (
+                f"Unrecognized replication method {self.replication_method}. Only {REPLICATION_INCREMENTAL} and"
+                " {REPLICATION_LOG_BASED} replication methods are supported."
+            )
+            self.logger.critical(msg)
+            raise RuntimeError(msg)
+
         if not self.replication_key:
             raise ValueError(
                 f"Could not detect replication key for '{self.name}' stream"
@@ -86,6 +97,8 @@ class CollectionStream(Stream):
         """Return a generator of record-type dictionary objects."""
         bookmark: str = self.get_starting_replication_key_value(context)
 
+        should_add_metadata: bool = self.config.get("add_record_metadata", False)
+
         if self.replication_method == REPLICATION_INCREMENTAL:
             start_date: ObjectId | None = None
             if bookmark:
@@ -105,43 +118,59 @@ class CollectionStream(Stream):
                 [("_id", ASCENDING)]
             ):
                 object_id: ObjectId = record["_id"]
-                yield {"_id": str(object_id), "document": record}
+                parsed_record = {
+                    "_id": str(object_id),
+                    "document": record,
+                }
+                if should_add_metadata:
+                    parsed_record["_sdc_batched_at"] = datetime.utcnow().isoformat()
+                yield parsed_record
 
         elif self.replication_method == REPLICATION_LOG_BASED:
             change_stream_options = {"full_document": "updateLookup"}
             if bookmark is not None:
                 change_stream_options["resume_after"] = {"_data": bookmark}
+            has_seen_a_record: bool = False
             keep_open: bool = True
             with self._collection.watch(**change_stream_options) as change_stream:
                 while change_stream.alive and keep_open:
                     record = change_stream.try_next()
-                    resume_token = change_stream.resume_token
-                    self.logger.info(f"b change_stream.resume_token: {resume_token}")
-                    if record is None:
-                        if change_stream.resume_token is not None:
-                            record_id = change_stream.resume_token["_data"]
-                        else:
-                            record_id = None
-                            self.logger.warning(
-                                "Change stream resume_token is missing."
-                            )
-                        yield {
-                            "_id": record_id,
-                            "document": None,
-                        }
+                    # if we have processed any records, a None record means that we've caught up to the end of the
+                    # stream - set keep_open to False so that the change stream is closed and the tap exits.
+                    # if no records have been processed, a None record means that there has been no activity in the
+                    # collection since the change stream was opened. MongoDB and DocumentDB have different behavior here
+                    # (MongoDB change streams have a valid/resumable resume_token immediately, while DocumentDB change
+                    # streams have a None resume_token until there has been an event published to the change stream).
+                    # The intent of the following code is the following:
+                    #  - If a change stream is opened and there are no records, hold it open until a record appears,
+                    #    then yield that record (whose _id is set to the change stream's resume token, so that the
+                    #    change stream can be resumed from this point by a later running of the tap).
+                    #  - If a change stream is opened and there is at least one record, yield all records
+                    if record is None and has_seen_a_record:
                         keep_open = False
                     if record is not None:
-                        yield {
+                        cluster_time: datetime = record["clusterTime"].as_datetime()
+                        parsed_record = {
                             "_id": record["_id"]["_data"],
                             "document": record["fullDocument"],
                             "operationType": record["operationType"],
-                            "clusterTime": int(
-                                record["clusterTime"].as_datetime().timestamp()
-                            ),
+                            "clusterTime": int(cluster_time.timestamp()),
                             "ns": record["ns"],
                         }
+                        if should_add_metadata:
+                            parsed_record[
+                                "_sdc_extracted_at"
+                            ] = cluster_time.isoformat()
+                            parsed_record[
+                                "_sdc_batched_at"
+                            ] = datetime.utcnow().isoformat()
+                        yield parsed_record
+                        has_seen_a_record = True
 
         else:
-            msg = f"Unrecognized replication strategy {self.replication_method}"
+            msg = (
+                f"Unrecognized replication method {self.replication_method}. Only {REPLICATION_INCREMENTAL} and"
+                " {REPLICATION_LOG_BASED} replication methods are supported."
+            )
             self.logger.critical(msg)
             raise RuntimeError(msg)

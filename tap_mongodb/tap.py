@@ -58,6 +58,13 @@ class TapMongoDB(Tap):
                 " will be included."
             ),
         ),
+        th.Property(
+            "add_record_metadata",
+            th.BooleanType,
+            required=False,
+            default=False,
+            description="When True, _sdc metadata fields will be added to records produced by this tap.",
+        ),
     ).to_dict()
 
     def get_mongo_config(self) -> str | None:
@@ -153,6 +160,20 @@ class TapMongoDB(Tap):
                             "null",
                         ],
                         "additionalProperties": True,
+                    },
+                    "_sdc_extracted_at": {
+                        "type": [
+                            "string",
+                            "null",
+                        ],
+                        "format": "date-time",
+                    },
+                    "_sdc_batched_at": {
+                        "type": [
+                            "string",
+                            "null",
+                        ],
+                        "format": "date-time",
                     },
                 },
             }
