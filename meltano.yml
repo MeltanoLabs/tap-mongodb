@@ -23,13 +23,40 @@ plugins:
       settings:
         - name: mongodb_connection_string
           kind: password
+          description: |
+            MongoDB connection string. See
+            https://www.mongodb.com/docs/manual/reference/connection-string/#connection-string-uri-format for specification.
         - name: mongodb_connection_string_file
           kind: file
+          description: Path to a file containing a MongoDB connection string URI.
+        - name: prefix
+          kind: string
+          description: |
+            An optional prefix which will be added to each stream name.
+          value: ''
         - name: start_date
           kind: date_iso8601
           description: |
             Start date - used for incremental replication only. Log based replication does not support this setting - do
-            not provide it unless you are using incremental replication.
+            not provide it unless you are using incremental replication. Defaults to epoch zero time `1970-01-01` if
+            tap uses incremental replication method.
+        - name: database_includes
+          kind: array
+          description: |
+            A list of objects, each specifying `database` and `collection` name, to be included in tap output.
+        - name: operation_types
+          kind: array
+          description: |
+            List of MongoDB change stream operation types to include in tap output. The default behavior is to
+            limit to document-level operation types. See full list of operation types at
+            https://www.mongodb.com/docs/manual/reference/change-events/#operation-types. Note that the list
+            of allowed_values for this property includes some values not available to all MongoDB versions.
+          value:
+            - create
+            - delete
+            - insert
+            - replace
+            - update
       metadata:
         '*':
           replication-key: _id

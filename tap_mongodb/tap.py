@@ -3,6 +3,7 @@
 from __future__ import annotations
 from pymongo.mongo_client import MongoClient
 from pymongo.collection import Collection
+from pymongo.errors import PyMongoError
 import sys
 
 from pathlib import Path
@@ -39,10 +40,21 @@ class TapMongoDB(Tap):
             description="Path (relative or absolute) to a file containing a MongoDB connection string URI.",
         ),
         th.Property(
+            "prefix",
+            th.StringType,
+            required=False,
+            default="",
+            description="An optional prefix which will be added to each stream name.",
+        ),
+        th.Property(
             "start_date",
             th.DateTimeType,
             required=False,
-            description="The earliest record date to sync",
+            description=(
+                "Start date. This is used for incremental replication only. Log based replication does not support "
+                "this setting - do not provide it unless using the incremental replication method. Defaults to "
+                "epoch zero time 1970-01-01 if tap uses incremental rplication method."
+            ),
         ),
         th.Property(
             "database_includes",
@@ -54,8 +66,7 @@ class TapMongoDB(Tap):
             ),
             required=True,
             description=(
-                "A list of databases to include. If this list is empty, all databases"
-                " will be included."
+                "A list of objects, each specifying database and collection name, to be included in tap output."
             ),
         ),
         th.Property(
@@ -64,6 +75,39 @@ class TapMongoDB(Tap):
             required=False,
             default=False,
             description="When True, _sdc metadata fields will be added to records produced by this tap.",
+        ),
+        th.Property(
+            "operation_types",
+            th.ArrayType(th.StringType),
+            required=False,
+            description=(
+                "List of MongoDB change stream operation types to include in tap output. The default behavior is to "
+                "limit to document-level operation types. See full list of operation types at"
+                "https://www.mongodb.com/docs/manual/reference/change-events/#operation-types. Note that the list "
+                "of allowed_values for this property includes some values not available to all MongoDB versions."
+            ),
+            default=[
+                "create",
+                "delete",
+                "insert",
+                "replace",
+                "update",
+            ],
+            allowed_values=[
+                "create",
+                "createIndexes",
+                "delete",
+                "drop",
+                "dropDatabase",
+                "dropIndexes",
+                "insert",
+                "invalidate",
+                "modify",
+                "rename",
+                "replace",
+                "shardCollection",
+                "update",
+            ],
         ),
     ).to_dict()
 
@@ -110,11 +154,10 @@ class TapMongoDB(Tap):
             collection = included["collection"]
             try:
                 client[db_name][collection].find_one()
-            except Exception:
+            except PyMongoError:
                 # Skip collections that are not accessible by the authenticated user
                 # This is a common case when using a shared cluster
                 # https://docs.mongodb.com/manual/core/security-users/#database-user-privileges
-                # TODO: vet the list of exceptions that can be raised here to be more explicit
                 self.logger.info(
                     f"Skipping collections {db_name}.{collection}, authenticated user does not have permission to it."
                 )
@@ -150,9 +193,10 @@ class TapMongoDB(Tap):
                     },
                     "clusterTime": {
                         "type": [
-                            "integer",
+                            "string",
                             "null",
-                        ]
+                        ],
+                        "format": "date-time",
                     },
                     "ns": {
                         "type": [

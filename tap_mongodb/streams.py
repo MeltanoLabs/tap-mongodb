@@ -59,7 +59,7 @@ class CollectionStream(Stream):
             context: Stream partition or context dictionary.
 
         Raises:
-            ValueError: TODO
+            ValueError: if configured replication method is unsupported, or if replication key is absent
         """
         # This also creates a state entry if one does not yet exist:
         state_dict = self.get_context_state(context)
@@ -74,7 +74,7 @@ class CollectionStream(Stream):
                 " {REPLICATION_LOG_BASED} replication methods are supported."
             )
             self.logger.critical(msg)
-            raise RuntimeError(msg)
+            raise ValueError(msg)
 
         if not self.replication_key:
             raise ValueError(
@@ -130,6 +130,7 @@ class CollectionStream(Stream):
             change_stream_options = {"full_document": "updateLookup"}
             if bookmark is not None:
                 change_stream_options["resume_after"] = {"_data": bookmark}
+            operation_types_allowlist: set = set(self.config.get("operation_types"))
             has_seen_a_record: bool = False
             keep_open: bool = True
             with self._collection.watch(**change_stream_options) as change_stream:
@@ -149,12 +150,15 @@ class CollectionStream(Stream):
                     if record is None and has_seen_a_record:
                         keep_open = False
                     if record is not None:
+                        operation_type = record["operationType"]
+                        if operation_type not in operation_types_allowlist:
+                            continue
                         cluster_time: datetime = record["clusterTime"].as_datetime()
                         parsed_record = {
                             "_id": record["_id"]["_data"],
                             "document": record["fullDocument"],
-                            "operationType": record["operationType"],
-                            "clusterTime": int(cluster_time.timestamp()),
+                            "operationType": operation_type,
+                            "clusterTime": cluster_time.isoformat(),
                             "ns": record["ns"],
                         }
                         if should_add_metadata:
@@ -164,6 +168,10 @@ class CollectionStream(Stream):
                             parsed_record[
                                 "_sdc_batched_at"
                             ] = datetime.utcnow().isoformat()
+                            if operation_type == "delete":
+                                parsed_record[
+                                    "_sdc_deleted_at"
+                                ] = cluster_time.isoformat()
                         yield parsed_record
                         has_seen_a_record = True
 
@@ -173,4 +181,4 @@ class CollectionStream(Stream):
                 " {REPLICATION_LOG_BASED} replication methods are supported."
             )
             self.logger.critical(msg)
-            raise RuntimeError(msg)
+            raise ValueError(msg)
