@@ -14,7 +14,7 @@ included_database = {
 
 SAMPLE_CONFIG = {
     "mongodb_connection_string": "mongodb://admin:password@localhost:27017/?replicaSet=rs0",
-    "database_includes:": [
+    "database_includes": [
         included_database,
     ],
 }
