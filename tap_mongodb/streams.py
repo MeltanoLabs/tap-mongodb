@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from os import PathLike
-from typing import Iterable, Any
+from typing import Iterable, Any, Generator
 from datetime import datetime
 
+from pendulum import DateTime
 from singer_sdk import PluginBase as TapBaseClass, _singerlib as singer
 from singer_sdk.streams import Stream
 from bson.objectid import ObjectId
@@ -18,7 +19,10 @@ from singer_sdk.streams.core import (
     REPLICATION_INCREMENTAL,
 )
 from singer_sdk.helpers._state import increment_state
+from singer_sdk.helpers._util import utc_now
 from singer_sdk._singerlib.utils import strptime_to_utc
+from singer_sdk.helpers._catalog import pop_deselected_record_properties
+from singer_sdk.helpers._typing import conform_record_data_types
 
 
 class CollectionStream(Stream):
@@ -93,6 +97,44 @@ class CollectionStream(Stream):
             check_sorted=self.check_sorted,
         )
 
+    def _generate_record_messages(
+        self, record: dict
+    ) -> Generator[singer.RecordMessage, None, None]:
+        """Write out a RECORD message.
+
+        We are overriding the default implementation of this (private) method because the default behavior is to set
+        time_extracted to utc_now() and we do not want that behavior in all scenarios. If we are processing records
+        from a MongoDB change stream, we want time_extracted to be set to the cluster_time value on that change stream
+        event, even if it's in the past relative to "now".
+
+        Args:
+            record: A single stream record.
+
+        Yields:
+            Record message objects.
+        """
+        extracted_at: DateTime = record.pop("_sdc_extracted_at", utc_now())
+        pop_deselected_record_properties(record, self.schema, self.mask, self.logger)
+        record = conform_record_data_types(
+            stream_name=self.name,
+            record=record,
+            schema=self.schema,
+            level=self.TYPE_CONFORMANCE_LEVEL,
+            logger=self.logger,
+        )
+        for stream_map in self.stream_maps:
+            mapped_record = stream_map.transform(record)
+            # Emit record if not filtered
+            if mapped_record is not None:
+                record_message = singer.RecordMessage(
+                    stream=stream_map.stream_alias,
+                    record=mapped_record,
+                    version=None,
+                    time_extracted=extracted_at,
+                )
+
+                yield record_message
+
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
         bookmark: str = self.get_starting_replication_key_value(context)
@@ -123,7 +165,7 @@ class CollectionStream(Stream):
                     "document": record,
                 }
                 if should_add_metadata:
-                    parsed_record["_sdc_batched_at"] = datetime.utcnow().isoformat()
+                    parsed_record["_sdc_batched_at"] = datetime.utcnow()
                 yield parsed_record
 
         elif self.replication_method == REPLICATION_LOG_BASED:
@@ -162,16 +204,10 @@ class CollectionStream(Stream):
                             "ns": record["ns"],
                         }
                         if should_add_metadata:
-                            parsed_record[
-                                "_sdc_extracted_at"
-                            ] = cluster_time.isoformat()
-                            parsed_record[
-                                "_sdc_batched_at"
-                            ] = datetime.utcnow().isoformat()
+                            parsed_record["_sdc_extracted_at"] = cluster_time
+                            parsed_record["_sdc_batched_at"] = datetime.utcnow()
                             if operation_type == "delete":
-                                parsed_record[
-                                    "_sdc_deleted_at"
-                                ] = cluster_time.isoformat()
+                                parsed_record["_sdc_deleted_at"] = cluster_time
                         yield parsed_record
                         has_seen_a_record = True
 
