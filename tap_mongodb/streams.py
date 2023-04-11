@@ -11,7 +11,10 @@ from singer_sdk import PluginBase as TapBaseClass, _singerlib as singer
 from singer_sdk.streams import Stream
 from bson.objectid import ObjectId
 from bson.errors import InvalidId
+from pymongo.mongo_client import MongoClient
 from pymongo.collection import Collection
+from pymongo.database import Database
+from pymongo.errors import OperationFailure
 from pymongo import ASCENDING
 from singer_sdk.streams.core import (
     TypeConformanceLevel,
@@ -46,9 +49,11 @@ class CollectionStream(Stream):
         schema: str | PathLike | dict[str, Any] | singer.Schema | None = None,
         name: str | None = None,
         collection: Collection | None = None,
+        mongo_client: MongoClient | None = None,
     ) -> None:
         super().__init__(tap, schema, name)
         self._collection: Collection = collection
+        self._mongo_client: MongoClient = mongo_client
 
     def _increment_stream_state(
         self, latest_record: dict[str, Any], *, context: dict | None = None
@@ -175,7 +180,36 @@ class CollectionStream(Stream):
             operation_types_allowlist: set = set(self.config.get("operation_types"))
             has_seen_a_record: bool = False
             keep_open: bool = True
-            with self._collection.watch(**change_stream_options) as change_stream:
+
+            try:
+                change_stream = self._collection.watch(**change_stream_options)
+            except OperationFailure as e:
+                if (
+                    e.code == 136
+                    and "modifyChangeStreams has not been run" in e.details["errmsg"]
+                    and self.config["allow_modify_change_streams"]
+                ):
+                    self.logger.info("Change stream")
+                    admin_db: Database = self._mongo_client["admin"]
+                    result = admin_db.command(
+                        "modifyChangeStreams",
+                        database=self._collection.database.name,
+                        collection=self._collection.name,
+                        enable=True,
+                    )
+                    if result and result["ok"]:
+                        change_stream = self._collection.watch(**change_stream_options)
+                    else:
+                        raise RuntimeError(
+                            f"Unable to enable change streams on collection {self._collection}"
+                        )
+                else:
+                    raise e
+            except Exception as e:
+                self.logger.critical(e)
+                raise e
+
+            with change_stream:
                 while change_stream.alive and keep_open:
                     record = change_stream.try_next()
                     # if we have processed any records, a None record means that we've caught up to the end of the

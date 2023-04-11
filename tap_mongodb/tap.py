@@ -53,7 +53,7 @@ class TapMongoDB(Tap):
             description=(
                 "Start date. This is used for incremental replication only. Log based replication does not support "
                 "this setting - do not provide it unless using the incremental replication method. Defaults to "
-                "epoch zero time 1970-01-01 if tap uses incremental rplication method."
+                "epoch zero time 1970-01-01 if tap uses incremental replication method."
             ),
         ),
         th.Property(
@@ -77,6 +77,20 @@ class TapMongoDB(Tap):
             description="When True, _sdc metadata fields will be added to records produced by this tap.",
         ),
         th.Property(
+            "allow_modify_change_streams",
+            th.BooleanType,
+            required=False,
+            default=False,
+            description=(
+                "In DocumentDB (unlike MongoDB), change streams must be enabled specifically (see "
+                "https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html#change_streams-enabling"
+                "). If attempting to open a change stream against a collection on which change streams have not been "
+                "enabled, an OperationFailure error will be raised. If this property is set to True, when this error "
+                "is seen, the tap will execute an admin command to enable change streams and then retry the read "
+                "operation. Note: this may incur new costs in AWS DocumentDB, and it requires elevated permissions."
+            ),
+        ),
+        th.Property(
             "operation_types",
             th.ArrayType(th.StringType),
             required=False,
@@ -93,23 +107,23 @@ class TapMongoDB(Tap):
                 "replace",
                 "update",
             ],
-            allowed_values=[
-                "create",
-                "createIndexes",
-                "delete",
-                "drop",
-                "dropDatabase",
-                "dropIndexes",
-                "insert",
-                "invalidate",
-                "modify",
-                "rename",
-                "replace",
-                "shardCollection",
-                "update",
-            ],
         ),
     ).to_dict()
+    config_jsonschema["properties"]["operation_types"]["items"]["enum"] = [
+        "create",
+        "createIndexes",
+        "delete",
+        "drop",
+        "dropDatabase",
+        "dropIndexes",
+        "insert",
+        "invalidate",
+        "modify",
+        "rename",
+        "replace",
+        "shardCollection",
+        "update",
+    ]
 
     def get_mongo_config(self) -> str | None:
         mongodb_connection_string_file = self.config.get(
@@ -249,6 +263,7 @@ class TapMongoDB(Tap):
                 name=entry.tap_stream_id,
                 schema=entry.schema,
                 collection=collection,
+                mongo_client=client,
             )
             stream.apply_catalog(self.catalog)
             yield stream

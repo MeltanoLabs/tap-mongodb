@@ -18,7 +18,7 @@ plugins:
       config:
         mongodb_connection_string: mongodb://admin:password@localhost:27017/
         database_includes:
-          - database: test_service
+          - database: test-database
             collection: TestDocument
       settings:
         - name: mongodb_connection_string
@@ -44,6 +44,19 @@ plugins:
           kind: array
           description: |
             A list of objects, each specifying `database` and `collection` name, to be included in tap output.
+        - name: add_record_metadata
+          kind: boolean
+          description: |
+            When True, _sdc metadata fields will be added to records produced by this tap.
+        - name: allow_modify_change_streams
+          kind: boolean
+          description: |
+            In DocumentDB (unlike MongoDB), change streams must be enabled specifically (see
+            https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html#change_streams-enabling
+            ). If attempting to open a change stream against a collection on which change streams have not been
+            enabled, an OperationFailure error will be raised. If this property is set to True, when this error
+            is seen, the tap will execute an admin command to enable change streams and then retry the read
+            operation. Note: this may incur new costs in AWS DocumentDB.
         - name: operation_types
           kind: array
           description: |
@@ -60,7 +73,7 @@ plugins:
       metadata:
         '*':
           replication-key: _id
-          replication-method: LOG_BASED
+          replication-method: INCREMENTAL
   loaders:
     - name: target-jsonl
       variant: andyh1203
