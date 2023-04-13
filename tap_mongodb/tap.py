@@ -129,17 +129,26 @@ class TapMongoDB(Tap):
         mongodb_connection_string_file = self.config.get(
             "mongodb_connection_string_file", None
         )
+        self.logger.info(
+            f"mongodb_connection_string_file: {mongodb_connection_string_file}"
+        )
 
         if mongodb_connection_string_file is not None:
-            if Path(mongodb_connection_string_file).is_file():
+            if Path(mongodb_connection_string_file).exists():
+                self.logger.info("mongodb_connection_string_file exists")
                 try:
-                    with Path(mongodb_connection_string_file).open() as f:
-                        return f.read()
+                    connection_string = (
+                        Path(mongodb_connection_string_file).read_text().strip()
+                    )
+                    self.logger.info(f"connection_string: {connection_string}")
+                    return connection_string
                 except Exception as e:
                     self.logger.critical(
                         f"The MongoDB connection string file '{mongodb_connection_string_file}' has errors: {e}"
                     )
                     sys.exit(1)
+            else:
+                self.logger.info("mongodb_connection_string_file is not file")
 
         return self.config.get("mongodb_connection_string", None)
 
