@@ -26,9 +26,26 @@ plugins:
           description: |
             MongoDB connection string. See
             https://www.mongodb.com/docs/manual/reference/connection-string/#connection-string-uri-format for specification.
+            The password included in this string should be url-encoded. The tap will not url-encode it.
         - name: mongodb_connection_string_file
           kind: file
-          description: Path to a file containing a MongoDB connection string URI.
+          description: |
+            Path to a file containing a MongoDB connection string URI. The password included in this string should be
+            url-encoded. The tap will not url-encode it.
+        - name: documentdb_credential_json_string
+          kind: password
+          description: |
+            String (serialized JSON object) with keys 'username', 'password', 'engine', 'host', 'port',
+            'dbClusterIdentifier' or 'dbName', 'ssl'. See example at
+            https://docs.aws.amazon.com/secretsmanager/latest/userguide/reference_secret_json_structure.html#reference_secret_json_structure_docdb.
+            The password from this JSON object will be url-encoded by the tap before opening the database connection.
+        - name: documentdb_credential_json_extra_options
+          kind: string
+          description: |
+            String (serialized JSON object) containing string-string key-value pairs which will be added to the
+            connection string options when using documentdb_credential_json_string. For example, when set to
+            the string `{\"tls\":\"true\",\"tlsCAFile\":\"my-ca-bundle.pem\"}`, the options
+            `tls=true&tlsCAFile=my-ca-bundle.pem` will be passed to the MongoClient.
         - name: prefix
           kind: string
           description: |
@@ -70,6 +87,19 @@ plugins:
             - insert
             - replace
             - update
+      settings_group_validation:
+        # yamllint disable rule:hyphens
+        -   -
+              mongodb_connection_string
+            - database_includes
+        -   - mongodb_connection_file
+            - database_includes
+        -   - documentdb_credential_json_string
+            - database_includes
+        -   - documentdb_credential_json_string
+            - documentdb_credential_json_extra_options
+            - database_includes
+      # yamllint enable rule:hyphens
       metadata:
         '*':
           replication-key: _id

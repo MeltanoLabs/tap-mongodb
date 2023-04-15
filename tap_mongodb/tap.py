@@ -1,6 +1,7 @@
 """mongodb tap class."""
 
 from __future__ import annotations
+from typing import Any
 from pymongo.mongo_client import MongoClient
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
@@ -14,6 +15,8 @@ from singer_sdk import typing as th  # JSON schema typing helpers
 from singer_sdk._singerlib.catalog import Catalog, CatalogEntry
 
 from tap_mongodb.streams import CollectionStream
+import json
+from urllib.parse import quote_plus
 
 
 class TapMongoDB(Tap):
@@ -38,6 +41,30 @@ class TapMongoDB(Tap):
             th.StringType,
             required=False,
             description="Path (relative or absolute) to a file containing a MongoDB connection string URI.",
+        ),
+        th.Property(
+            "documentdb_credential_json_string",
+            th.StringType,
+            required=False,
+            secret=True,
+            description=(
+                "String (serialized JSON object) with keys 'username', 'password', 'engine', 'host', 'port', "
+                "'dbClusterIdentifier' or 'dbName', 'ssl'. See example at "
+                "https://docs.aws.amazon.com/secretsmanager/latest/userguide/reference_secret_json_structure.html#reference_secret_json_structure_docdb"
+                ". The password from this JSON object will be url-encoded by the tap before opening the database "
+                "connection."
+            ),
+        ),
+        th.Property(
+            "documentdb_credential_json_extra_options",
+            th.StringType,
+            required=False,
+            description=(
+                "String (serialized JSON object) containing string-string key-value pairs which will be added to the "
+                "connection string options when using documentdb_credential_json_string. For example, when set to "
+                'the string `{"tls":"true","tlsCAFile":"my-ca-bundle.pem"}`, the options '
+                "`tls=true&tlsCAFile=my-ca-bundle.pem` will be passed to the MongoClient."
+            ),
         ),
         th.Property(
             "prefix",
@@ -87,7 +114,8 @@ class TapMongoDB(Tap):
                 "). If attempting to open a change stream against a collection on which change streams have not been "
                 "enabled, an OperationFailure error will be raised. If this property is set to True, when this error "
                 "is seen, the tap will execute an admin command to enable change streams and then retry the read "
-                "operation. Note: this may incur new costs in AWS DocumentDB, and it requires elevated permissions."
+                "operation. Note: this may incur new costs in AWS DocumentDB, and it requires elevated permissions on"
+                "the user - the user must have the modifyChangeStreams permission in addition to read permissions."
             ),
         ),
         th.Property(
@@ -125,15 +153,31 @@ class TapMongoDB(Tap):
         "update",
     ]
 
-    def get_mongo_config(self) -> str | None:
+    def _get_mongo_connection_string(self) -> str | None:
+        documentdb_credential_json_string = self.config.get(
+            "documentdb_credential_json_string", None
+        )
+        if documentdb_credential_json_string is not None:
+            self.logger.debug("Using documentdb_credential_json_string")
+            documentdb_credential_json: dict[str, Any] = json.loads(
+                documentdb_credential_json_string
+            )
+            username: str = documentdb_credential_json.get("username")
+            password: str = documentdb_credential_json.get("password")
+            host: str = documentdb_credential_json.get("host")
+            port: int = documentdb_credential_json.get("port")
+            connection_string = (
+                f"mongodb://{quote_plus(username)}:{quote_plus(password)}@{host}:{port}"
+            )
+            return connection_string
+
         mongodb_connection_string_file = self.config.get(
             "mongodb_connection_string_file", None
         )
-        self.logger.info(
-            f"mongodb_connection_string_file: {mongodb_connection_string_file}"
-        )
-
         if mongodb_connection_string_file is not None:
+            self.logger.debug(
+                f"Using mongodb_connection_string_file: {mongodb_connection_string_file}"
+            )
             if Path(mongodb_connection_string_file).exists():
                 self.logger.info("mongodb_connection_string_file exists")
                 try:
@@ -150,10 +194,21 @@ class TapMongoDB(Tap):
             else:
                 self.logger.info("mongodb_connection_string_file is not file")
 
+        self.logger.debug("Using mongodb_connection_string")
         return self.config.get("mongodb_connection_string", None)
 
+    def _get_mongo_options(self) -> dict[str, Any]:
+        documentdb_credential_json_extra_options_string = self.config.get(
+            "documentdb_credential_json_extra_options", None
+        )
+        if documentdb_credential_json_extra_options_string is None:
+            return {}
+        return json.loads(documentdb_credential_json_extra_options_string)
+
     def get_mongo_client(self) -> MongoClient:
-        client: MongoClient = MongoClient(self.get_mongo_config())
+        client: MongoClient = MongoClient(
+            self._get_mongo_connection_string(), **self._get_mongo_options()
+        )
         try:
             client.server_info()
         except Exception as e:
