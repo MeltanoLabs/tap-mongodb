@@ -80,7 +80,7 @@ class CollectionStream(Stream):
         }:
             msg = (
                 f"Unrecognized replication method {self.replication_method}. Only {REPLICATION_INCREMENTAL} and"
-                " {REPLICATION_LOG_BASED} replication methods are supported."
+                f" {REPLICATION_LOG_BASED} replication methods are supported."
             )
             self.logger.critical(msg)
             raise ValueError(msg)
@@ -157,7 +157,7 @@ class CollectionStream(Stream):
                     )
             else:
                 start_date_str = self.config.get("start_date", "1970-01-01")
-                self.logger.info(f"using start_date_str: {start_date_str}")
+                self.logger.debug(f"using start_date_str: {start_date_str}")
                 start_date_dt: datetime = strptime_to_utc(start_date_str)
                 start_date = ObjectId.from_datetime(start_date_dt)
 
@@ -189,7 +189,6 @@ class CollectionStream(Stream):
                     and "modifyChangeStreams has not been run" in e.details["errmsg"]
                     and self.config["allow_modify_change_streams"]
                 ):
-                    self.logger.info("Change stream")
                     admin_db: Database = self._mongo_client["admin"]
                     result = admin_db.command(
                         "modifyChangeStreams",
@@ -248,7 +247,7 @@ class CollectionStream(Stream):
         else:
             msg = (
                 f"Unrecognized replication method {self.replication_method}. Only {REPLICATION_INCREMENTAL} and"
-                " {REPLICATION_LOG_BASED} replication methods are supported."
+                f" {REPLICATION_LOG_BASED} replication methods are supported."
             )
             self.logger.critical(msg)
             raise ValueError(msg)

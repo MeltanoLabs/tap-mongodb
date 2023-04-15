@@ -179,12 +179,11 @@ class TapMongoDB(Tap):
                 f"Using mongodb_connection_string_file: {mongodb_connection_string_file}"
             )
             if Path(mongodb_connection_string_file).exists():
-                self.logger.info("mongodb_connection_string_file exists")
+                self.logger.debug("mongodb_connection_string_file exists")
                 try:
                     connection_string = (
                         Path(mongodb_connection_string_file).read_text().strip()
                     )
-                    self.logger.info(f"connection_string: {connection_string}")
                     return connection_string
                 except Exception as e:
                     self.logger.critical(
@@ -219,11 +218,9 @@ class TapMongoDB(Tap):
     def catalog_dict(self) -> dict:
         # Use cached catalog if available
         if hasattr(self, "_catalog_dict") and self._catalog_dict:
-            self.logger.info(f"self._catalog_dict: {self._catalog_dict}")
             return self._catalog_dict
         # Defer to passed in catalog if available
         if self.input_catalog:
-            self.logger.info(f"self.input_catalog: {self.input_catalog}")
             return self.input_catalog.to_dict()
         catalog = Catalog()
         client: MongoClient = self.get_mongo_client()
