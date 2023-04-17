@@ -239,8 +239,8 @@ class TapMongoDB(Tap):
                 continue
 
             self.logger.info("Discovered collection %s.%s", db_name, collection)
-            prefix = f"{self.config['prefix']}-" if self.config["prefix"] else ""
-            stream_name = f"{prefix}{db_name}_{collection}"
+            prefix = f"{self.config['prefix']}_" if self.config["prefix"] else ""
+            stream_name = f"{prefix}{db_name}_{collection}".replace("-", "_")
             entry = CatalogEntry.from_dict({"tap_stream_id": stream_name})
             entry.stream = stream_name
             schema = {
