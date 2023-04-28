@@ -71,4 +71,4 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.isort]
-known-third-party = ["pymongo"]
+known-third-party = ["pymongo", "singer_sdk"]
