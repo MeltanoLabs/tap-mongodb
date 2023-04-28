@@ -2,33 +2,30 @@
 
 from __future__ import annotations
 
-from typing import Generator
 from datetime import datetime
+from typing import Any, Generator, Iterable
 
-from pendulum import DateTime
-from singer_sdk import PluginBase as TapBaseClass, _singerlib as singer
-from bson.objectid import ObjectId
 from bson.errors import InvalidId
+from bson.objectid import ObjectId
+from connector import MongoDBConnector
+from pendulum import DateTime
+from pymongo import ASCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import OperationFailure
-from pymongo import ASCENDING
-from singer_sdk.streams.core import (
-    TypeConformanceLevel,
-    REPLICATION_LOG_BASED,
-    REPLICATION_INCREMENTAL,
-)
-from singer_sdk.helpers._state import increment_state
-from singer_sdk.helpers._util import utc_now
+from singer_sdk import PluginBase as TapBaseClass
+from singer_sdk import _singerlib as singer
 from singer_sdk._singerlib.utils import strptime_to_utc
 from singer_sdk.helpers._catalog import pop_deselected_record_properties
+from singer_sdk.helpers._state import increment_state
 from singer_sdk.helpers._typing import conform_record_data_types
-
-from connector import MongoDBConnector
-
-from typing import Any, Iterable
-
-from singer_sdk.streams.core import Stream
+from singer_sdk.helpers._util import utc_now
+from singer_sdk.streams.core import (
+    REPLICATION_INCREMENTAL,
+    REPLICATION_LOG_BASED,
+    Stream,
+    TypeConformanceLevel,
+)
 
 
 class MongoDBCollectionStream(Stream):

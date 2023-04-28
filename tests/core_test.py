@@ -1,11 +1,11 @@
 """Tests standard tap features using the built-in SDK tests library."""
 
+from pymongo.database import Database
+from pymongo.mongo_client import MongoClient
 from singer_sdk.testing import get_tap_test_class
 
-from tap_mongodb.tap import TapMongoDB
 from tap_mongodb.streams import MongoDBCollectionStream
-from pymongo.mongo_client import MongoClient
-from pymongo.database import Database
+from tap_mongodb.tap import TapMongoDB
 
 included_database = {
     "database": "test_service",
