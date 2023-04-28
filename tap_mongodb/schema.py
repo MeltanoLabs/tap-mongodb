@@ -36,7 +36,13 @@ SCHEMA = {
                 "null",
             ],
         },
-        "ns": {"additionalProperties": True, "type": ["object", "null"]},
+        "ns": {
+            "additionalProperties": True,
+            "type": [
+                "object",
+                "null",
+            ],
+        },
         "operationType": {
             "type": [
                 "string",
