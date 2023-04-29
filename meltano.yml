@@ -19,7 +19,7 @@ plugins:
         mongodb_connection_string: mongodb://admin:password@localhost:27017/
         database_includes:
           - database: test-database
-            collection: TestDocument
+            collection: TestDocument # set collection: '*.*' to tap all collections in the database
       settings:
         - name: mongodb_connection_string
           kind: password

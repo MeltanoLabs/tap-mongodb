@@ -153,6 +153,17 @@ class TapMongoDB(Tap):
         "update",
     ]
 
+    def __init__(
+            self,
+            config: dict | PurePath | str | list[PurePath | str] | None = None,
+            catalog: PurePath | str | dict | Catalog | None = None,
+            state: PurePath | str | dict | None = None,
+            parse_env_config: bool = False,
+            validate_config: bool = True,
+    ):
+        super().__init__(config, catalog, state, parse_env_config, validate_config)
+        self._catalog_dict = None
+
     def _get_mongo_connection_string(self) -> str | None:
         documentdb_credential_json_string = self.config.get(
             "documentdb_credential_json_string", None
@@ -174,6 +185,7 @@ class TapMongoDB(Tap):
         mongodb_connection_string_file = self.config.get(
             "mongodb_connection_string_file", None
         )
+
         if mongodb_connection_string_file is not None:
             self.logger.debug(
                 f"Using mongodb_connection_string_file: {mongodb_connection_string_file}"
@@ -205,14 +217,90 @@ class TapMongoDB(Tap):
         return json.loads(documentdb_credential_json_extra_options_string)
 
     def get_mongo_client(self) -> MongoClient:
-        client: MongoClient = MongoClient(
-            self._get_mongo_connection_string(), **self._get_mongo_options()
-        )
+        client: MongoClient = MongoClient(self._get_mongo_connection_string(), **self._get_mongo_options())
         try:
             client.server_info()
         except Exception as e:
             raise RuntimeError("Could not connect to MongoDB") from e
         return client
+
+    def _update_entry_catalog(self, catalog, db_name, collection) -> dict:
+        self.logger.info("Discovered collection %s.%s", db_name, collection)
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "_id": {
+                    "type": [
+                        "string",
+                        "null",
+                    ],
+                    "description": "The document's _id",
+                },
+                "document": {
+                    "type": [
+                        "object",
+                        "null",
+                    ],
+                    "additionalProperties": True,
+                    "description": "The document from the collection",
+                },
+                "operationType": {
+                    "type": [
+                        "string",
+                        "null",
+                    ]
+                },
+                "clusterTime": {
+                    "type": [
+                        "string",
+                        "null",
+                    ],
+                    "format": "date-time",
+                },
+                "ns": {
+                    "type": [
+                        "object",
+                        "null",
+                    ],
+                    "additionalProperties": True,
+                },
+                "_sdc_extracted_at": {
+                    "type": [
+                        "string",
+                        "null",
+                    ],
+                    "format": "date-time",
+                },
+                "_sdc_batched_at": {
+                    "type": [
+                        "string",
+                        "null",
+                    ],
+                    "format": "date-time",
+                },
+            },
+        }
+
+        prefix = f"{self.config['prefix']}_" if self.config["prefix"] else ""
+        stream_name = f"{prefix}{db_name}_{collection}".replace("-", "_").lower()
+
+        entry = CatalogEntry.from_dict({"tap_stream_id": stream_name})
+        entry.stream = stream_name
+        entry.schema = entry.schema.from_dict(schema)
+        entry.key_properties = ["_id"]
+
+        entry.metadata = entry.metadata.get_standard_metadata(
+            schema=schema,
+            key_properties=["_id"],
+            valid_replication_keys=["_id"],
+        )
+
+        entry.database = db_name
+        entry.table = collection
+        catalog.add_stream(entry)
+
+        return entry, catalog
 
     @property
     def catalog_dict(self) -> dict:
@@ -222,93 +310,47 @@ class TapMongoDB(Tap):
         # Defer to passed in catalog if available
         if self.input_catalog:
             return self.input_catalog.to_dict()
+
         catalog = Catalog()
         client: MongoClient = self.get_mongo_client()
+
         for included in self.config.get("database_includes", []):
             db_name = included["database"]
             collection = included["collection"]
-            try:
-                client[db_name][collection].find_one()
-            except PyMongoError:
-                # Skip collections that are not accessible by the authenticated user
-                # This is a common case when using a shared cluster
-                # https://docs.mongodb.com/manual/core/security-users/#database-user-privileges
-                self.logger.info(
-                    f"Skipping collections {db_name}.{collection}, authenticated user does not have permission to it."
-                )
-                continue
+            if collection == '*.*':
+                self._catalog_dict = dict(streams=[])
+                for col in client[db_name].list_collection_names():
+                    try:
+                        client[db_name][col].find_one()
+                    except PyMongoError:
+                        # Skip collections that are not accessible by the authenticated user
+                        # This is a common case when using a shared cluster
+                        # https://docs.mongodb.com/manual/core/security-users/#database-user-privileges
+                        self.logger.info(
+                            f"Skipping collections {db_name}.{col}, authenticated user does not have permission to it."
+                        )
+                        continue
 
-            self.logger.info("Discovered collection %s.%s", db_name, collection)
-            prefix = f"{self.config['prefix']}_" if self.config["prefix"] else ""
-            stream_name = f"{prefix}{db_name}_{collection}".replace("-", "_").lower()
-            entry = CatalogEntry.from_dict({"tap_stream_id": stream_name})
-            entry.stream = stream_name
-            schema = {
-                "type": "object",
-                "properties": {
-                    "_id": {
-                        "type": [
-                            "string",
-                            "null",
-                        ],
-                        "description": "The document's _id",
-                    },
-                    "document": {
-                        "type": [
-                            "object",
-                            "null",
-                        ],
-                        "additionalProperties": True,
-                        "description": "The document from the collection",
-                    },
-                    "operationType": {
-                        "type": [
-                            "string",
-                            "null",
-                        ]
-                    },
-                    "clusterTime": {
-                        "type": [
-                            "string",
-                            "null",
-                        ],
-                        "format": "date-time",
-                    },
-                    "ns": {
-                        "type": [
-                            "object",
-                            "null",
-                        ],
-                        "additionalProperties": True,
-                    },
-                    "_sdc_extracted_at": {
-                        "type": [
-                            "string",
-                            "null",
-                        ],
-                        "format": "date-time",
-                    },
-                    "_sdc_batched_at": {
-                        "type": [
-                            "string",
-                            "null",
-                        ],
-                        "format": "date-time",
-                    },
-                },
-            }
-            entry.schema = entry.schema.from_dict(schema)
-            entry.key_properties = ["_id"]
-            entry.metadata = entry.metadata.get_standard_metadata(
-                schema=schema,
-                key_properties=["_id"],
-                valid_replication_keys=["_id"],
-            )
-            entry.database = db_name
-            entry.table = collection
-            catalog.add_stream(entry)
+                    entry, catalog = self._update_entry_catalog(catalog, db_name, collection)
+                    stream = catalog.to_dict()['streams'][0]
+                    for k in ['tap_stream_id', 'table_name', 'stream']:
+                        stream[k] = stream[k].replace('*.*', col)
+                    self._catalog_dict['streams'].append(stream)
+            else:
+                try:
+                    client[db_name][collection].find_one()
+                except PyMongoError:
+                    # Skip collections that are not accessible by the authenticated user
+                    # This is a common case when using a shared cluster
+                    # https://docs.mongodb.com/manual/core/security-users/#database-user-privileges
+                    self.logger.info(
+                        f"Skipping collections {db_name}.{collection}, authenticated user does not have permission to it."
+                    )
+                    continue
 
-        self._catalog_dict = catalog.to_dict()
+                entry, catalog = self._update_entry_catalog(catalog, db_name, collection)
+
+                self._catalog_dict = catalog.to_dict()
         return self._catalog_dict
 
     def discover_streams(self) -> list[CollectionStream]:
@@ -329,7 +371,6 @@ class TapMongoDB(Tap):
             )
             stream.apply_catalog(self.catalog)
             yield stream
-
 
 if __name__ == "__main__":
     TapMongoDB.cli()
