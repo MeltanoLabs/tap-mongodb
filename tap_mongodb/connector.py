@@ -51,7 +51,7 @@ class MongoDBConnector:
 
         parts.append(collection_name)
 
-        return delimiter.join(parts)
+        return delimiter.join(parts).lower()
 
     def discover_catalog_entry(self, collection_name: str) -> CatalogEntry:
         """Create `CatalogEntry` object for the given collection."""
