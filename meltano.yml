@@ -83,14 +83,12 @@ plugins:
         # yamllint disable rule:hyphens
         -   -
               mongodb_connection_string
-            - database_includes
-        -   - mongodb_connection_file
-            - database_includes
+            - database
         -   - documentdb_credential_json_string
-            - database_includes
+            - database
         -   - documentdb_credential_json_string
             - documentdb_credential_json_extra_options
-            - database_includes
+            - database
       # yamllint enable rule:hyphens
       select:
         - '*.*'
