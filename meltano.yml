@@ -93,8 +93,7 @@ plugins:
             - database_includes
       # yamllint enable rule:hyphens
       select:
-        - entity_one.field_one
-        - entity_two.*
+        - '*.*'
       metadata:
         '*':
           replication-key: _id

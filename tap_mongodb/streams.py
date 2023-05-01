@@ -7,7 +7,6 @@ from typing import Any, Generator, Iterable
 
 from bson.errors import InvalidId
 from bson.objectid import ObjectId
-from connector import MongoDBConnector
 from pendulum import DateTime
 from pymongo import ASCENDING
 from pymongo.collection import Collection
@@ -26,6 +25,8 @@ from singer_sdk.streams.core import (
     Stream,
     TypeConformanceLevel,
 )
+
+from tap_mongodb.connector import MongoDBConnector
 
 
 class MongoDBCollectionStream(Stream):

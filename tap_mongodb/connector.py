@@ -5,8 +5,9 @@ from typing import Any, Optional
 from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
-from schema import SCHEMA
 from singer_sdk._singerlib.catalog import CatalogEntry, MetadataMapping, Schema
+
+from tap_mongodb.schema import SCHEMA
 
 
 class MongoDBConnector:
@@ -47,8 +48,6 @@ class MongoDBConnector:
 
         if prefix:
             parts.append(prefix)
-
-        parts.append(self._db_name)
 
         parts.append(collection_name)
 

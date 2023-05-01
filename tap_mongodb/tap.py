@@ -7,10 +7,10 @@ from functools import cached_property
 from typing import Any
 from urllib.parse import quote_plus
 
-from connector import MongoDBConnector
 from singer_sdk import Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
 
+from tap_mongodb.connector import MongoDBConnector
 from tap_mongodb.streams import MongoDBCollectionStream
 
 
