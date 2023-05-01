@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "menzenski-tap-mongodb"
-version = "0.0.1"
+version = "0.1.0"
 description = "`tap-mongodb` is a Singer tap for mongodb, built with the Meltano Singer SDK."
 readme = "README.md"
 authors = ["Matt Menzenski"]
@@ -61,6 +61,7 @@ select = [
     "E",
     "F",
     "RUF",
+    "I001",
 ]
 exclude = [
     ".meltano",
@@ -71,4 +72,8 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.isort]
-known-third-party = ["pymongo"]
+known-third-party = [
+    "pymongo",
+    "singer_sdk",
+    "pendulum",
+]

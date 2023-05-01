@@ -2,33 +2,34 @@
 
 from __future__ import annotations
 
-from os import PathLike
-from typing import Iterable, Any, Generator
 from datetime import datetime
+from typing import Any, Generator, Iterable
 
-from pendulum import DateTime
-from singer_sdk import PluginBase as TapBaseClass, _singerlib as singer
-from singer_sdk.streams import Stream
-from bson.objectid import ObjectId
 from bson.errors import InvalidId
-from pymongo.mongo_client import MongoClient
+from bson.objectid import ObjectId
+from pendulum import DateTime
+from pymongo import ASCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import OperationFailure
-from pymongo import ASCENDING
-from singer_sdk.streams.core import (
-    TypeConformanceLevel,
-    REPLICATION_LOG_BASED,
-    REPLICATION_INCREMENTAL,
-)
-from singer_sdk.helpers._state import increment_state
-from singer_sdk.helpers._util import utc_now
+from singer_sdk import PluginBase as TapBaseClass
+from singer_sdk import _singerlib as singer
 from singer_sdk._singerlib.utils import strptime_to_utc
 from singer_sdk.helpers._catalog import pop_deselected_record_properties
+from singer_sdk.helpers._state import increment_state
 from singer_sdk.helpers._typing import conform_record_data_types
+from singer_sdk.helpers._util import utc_now
+from singer_sdk.streams.core import (
+    REPLICATION_INCREMENTAL,
+    REPLICATION_LOG_BASED,
+    Stream,
+    TypeConformanceLevel,
+)
+
+from tap_mongodb.connector import MongoDBConnector
 
 
-class CollectionStream(Stream):
+class MongoDBCollectionStream(Stream):
     """Stream class for mongodb streams."""
 
     # The output stream will always have _id as the primary key
@@ -46,14 +47,26 @@ class CollectionStream(Stream):
     def __init__(
         self,
         tap: TapBaseClass,
-        schema: str | PathLike | dict[str, Any] | singer.Schema | None = None,
-        name: str | None = None,
-        collection: Collection | None = None,
-        mongo_client: MongoClient | None = None,
+        catalog_entry: dict,
+        connector: MongoDBConnector,
     ) -> None:
-        super().__init__(tap, schema, name)
-        self._collection: Collection = collection
-        self._mongo_client: MongoClient = mongo_client
+        """Initialize the database stream.
+
+        If `connector` is omitted, a new connector will be created.
+
+        Args:
+            tap: The parent tap object.
+            catalog_entry: Catalog entry dict.
+            connector: Connector to reuse.
+        """
+        self._connector: MongoDBConnector = connector
+        self.catalog_entry = catalog_entry
+        self._collection_name: str = self.catalog_entry["table_name"]
+        super().__init__(
+            tap=tap,
+            schema=self.catalog_entry["schema"],
+            name=self.catalog_entry["tap_stream_id"],
+        )
 
     def _increment_stream_state(
         self, latest_record: dict[str, Any], *, context: dict | None = None
@@ -146,6 +159,8 @@ class CollectionStream(Stream):
 
         should_add_metadata: bool = self.config.get("add_record_metadata", False)
 
+        collection: Collection = self._connector.database[self._collection_name]
+
         if self.replication_method == REPLICATION_INCREMENTAL:
             start_date: ObjectId | None = None
             if bookmark:
@@ -161,7 +176,7 @@ class CollectionStream(Stream):
                 start_date_dt: datetime = strptime_to_utc(start_date_str)
                 start_date = ObjectId.from_datetime(start_date_dt)
 
-            for record in self._collection.find({"_id": {"$gt": start_date}}).sort(
+            for record in collection.find({"_id": {"$gt": start_date}}).sort(
                 [("_id", ASCENDING)]
             ):
                 object_id: ObjectId = record["_id"]
@@ -182,25 +197,25 @@ class CollectionStream(Stream):
             keep_open: bool = True
 
             try:
-                change_stream = self._collection.watch(**change_stream_options)
+                change_stream = collection.watch(**change_stream_options)
             except OperationFailure as e:
                 if (
                     e.code == 136
                     and "modifyChangeStreams has not been run" in e.details["errmsg"]
                     and self.config["allow_modify_change_streams"]
                 ):
-                    admin_db: Database = self._mongo_client["admin"]
+                    admin_db: Database = self._connector.mongo_client["admin"]
                     result = admin_db.command(
                         "modifyChangeStreams",
-                        database=self._collection.database.name,
-                        collection=self._collection.name,
+                        database=collection.database.name,
+                        collection=collection.name,
                         enable=True,
                     )
                     if result and result["ok"]:
-                        change_stream = self._collection.watch(**change_stream_options)
+                        change_stream = collection.watch(**change_stream_options)
                     else:
                         raise RuntimeError(
-                            f"Unable to enable change streams on collection {self._collection}"
+                            f"Unable to enable change streams on collection {collection.name}"
                         )
                 else:
                     raise e
