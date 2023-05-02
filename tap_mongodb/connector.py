@@ -1,3 +1,5 @@
+"""MongoDB/DocumentDB connector utility"""
+
 from functools import cached_property
 from logging import Logger, getLogger
 from typing import Any, Optional
@@ -11,6 +13,8 @@ from tap_mongodb.schema import SCHEMA
 
 
 class MongoDBConnector:
+    """MongoDB/DocumentDB connector class"""
+
     def __init__(
         self,
         connection_string: str,
@@ -26,15 +30,18 @@ class MongoDBConnector:
 
     @cached_property
     def mongo_client(self) -> MongoClient:
+        """Provide a MongoClient instance. Client is cached and reused."""
         client: MongoClient = MongoClient(self._connection_string, **self._options)
         try:
             client.server_info()
-        except Exception as e:
-            raise RuntimeError("Could not connect to MongoDB") from e
+        except Exception as exception:
+            self._logger.exception("Could not connect to MongoDB")
+            raise RuntimeError("Could not connect to MongoDB") from exception
         return client
 
     @property
     def database(self) -> Database:
+        """Provide a Database instance."""
         return self.mongo_client[self._db_name]
 
     def get_fully_qualified_name(

@@ -155,6 +155,7 @@ class MongoDBCollectionStream(Stream):
 
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
+        # pylint: disable=too-many-locals,too-many-branches,too-many-statements
         bookmark: str = self.get_starting_replication_key_value(context)
 
         should_add_metadata: bool = self.config.get("add_record_metadata", False)
@@ -198,10 +199,11 @@ class MongoDBCollectionStream(Stream):
 
             try:
                 change_stream = collection.watch(**change_stream_options)
-            except OperationFailure as e:
+            except OperationFailure as operation_failure:
                 if (
-                    e.code == 136
-                    and "modifyChangeStreams has not been run" in e.details["errmsg"]
+                    operation_failure.code == 136
+                    and "modifyChangeStreams has not been run"
+                    in operation_failure.details["errmsg"]
                     and self.config["allow_modify_change_streams"]
                 ):
                     admin_db: Database = self._connector.mongo_client["admin"]
@@ -216,12 +218,12 @@ class MongoDBCollectionStream(Stream):
                     else:
                         raise RuntimeError(
                             f"Unable to enable change streams on collection {collection.name}"
-                        )
+                        ) from operation_failure
                 else:
-                    raise e
-            except Exception as e:
-                self.logger.critical(e)
-                raise e
+                    raise operation_failure
+            except Exception as exception:
+                self.logger.critical(exception)
+                raise exception
 
             with change_stream:
                 while change_stream.alive and keep_open:

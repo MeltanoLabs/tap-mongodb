@@ -24,6 +24,7 @@ TestTapMongoDB = get_tap_test_class(tap_class=TapMongoDB, config=SAMPLE_CONFIG)
 
 
 def test_one_stream_is_discovered():
+    """Test that a stream is discovered"""
     # given a collection in the database
     with MongoClient(SAMPLE_CONFIG["mongodb_connection_string"]) as client:
         database: Database = client.get_database(included_database["database"])

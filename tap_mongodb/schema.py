@@ -1,3 +1,5 @@
+"""Schema for records emitted by tap-mongodb extractor."""
+
 SCHEMA = {
     "properties": {
         "_id": {

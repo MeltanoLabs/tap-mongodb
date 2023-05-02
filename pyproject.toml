@@ -28,7 +28,7 @@ pyupgrade = "^3.3.1"
 mypy = "^1.0.0"
 isort = "^5.11.5"
 singer-sdk = { version = "^0.22.1", extras = ["testing"] }
-pylint = "^2.17.3"
+pylint = "^3.0.0a6"
 
 [tool.poetry.extras]
 s3 = ["fs-s3fs"]
@@ -77,4 +77,11 @@ known-third-party = [
     "pymongo",
     "singer_sdk",
     "pendulum",
+]
+
+[tool.pylint]
+max-line-length = 120
+
+disable = [
+    "logging-fstring-interpolation"
 ]
