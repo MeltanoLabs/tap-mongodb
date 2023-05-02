@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from functools import cached_property
+import sys
 from typing import Any
 from urllib.parse import quote_plus
 
@@ -12,6 +12,11 @@ from singer_sdk import typing as th  # JSON schema typing helpers
 
 from tap_mongodb.connector import MongoDBConnector
 from tap_mongodb.streams import MongoDBCollectionStream
+
+if sys.version_info[:2] >= (3, 7):
+    from backports.cached_property import cached_property
+else:
+    from functools import cached_property
 
 
 class TapMongoDB(Tap):
@@ -45,7 +50,8 @@ class TapMongoDB(Tap):
             description=(
                 "String (serialized JSON object) with keys 'username', 'password', 'engine', 'host', 'port', "
                 "'dbClusterIdentifier' or 'dbName', 'ssl'. See example at "
-                "https://docs.aws.amazon.com/secretsmanager/latest/userguide/reference_secret_json_structure.html#reference_secret_json_structure_docdb"
+                # pylint: disable-next=line-too-long
+                "https://docs.aws.amazon.com/secretsmanager/latest/userguide/reference_secret_json_structure.html#reference_secret_json_structure_docdb"  # noqa: E501
                 ". The password from this JSON object will be url-encoded by the tap before opening the database "
                 "connection."
             ),
@@ -92,7 +98,8 @@ class TapMongoDB(Tap):
             default=False,
             description=(
                 "In DocumentDB (unlike MongoDB), change streams must be enabled specifically (see "
-                "https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html#change_streams-enabling"
+                # pylint: disable-next=line-too-long
+                "https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html#change_streams-enabling"  # noqa: E501
                 "). If attempting to open a change stream against a collection on which change streams have not been "
                 "enabled, an OperationFailure error will be raised. If this property is set to True, when this error "
                 "is seen, the tap will execute an admin command to enable change streams and then retry the read "
@@ -136,6 +143,7 @@ class TapMongoDB(Tap):
     ]
 
     def _get_mongo_connection_string(self) -> str | None:
+        """Get configured MongoDB connection URI."""
         documentdb_credential_json_string = self.config.get(
             "documentdb_credential_json_string", None
         )
@@ -157,6 +165,7 @@ class TapMongoDB(Tap):
         return self.config.get("mongodb_connection_string", None)
 
     def _get_mongo_options(self) -> dict[str, Any]:
+        """Get configured MongoDB/DocumentDB extra options"""
         documentdb_credential_json_extra_options_string = self.config.get(
             "documentdb_credential_json_extra_options", None
         )
@@ -166,6 +175,7 @@ class TapMongoDB(Tap):
 
     @cached_property
     def connector(self) -> MongoDBConnector:
+        """Get MongoDBConnector instance. Instance is cached and reused."""
         return MongoDBConnector(
             self._get_mongo_connection_string(),
             self._get_mongo_options(),
@@ -180,8 +190,11 @@ class TapMongoDB(Tap):
         Returns:
             The tap's catalog as a dict
         """
-        if hasattr(self, "_catalog_dict") and self._catalog_dict:
-            return self._catalog_dict
+        if (
+            hasattr(self, "_catalog_dict")
+            and self._catalog_dict  # pylint: disable=access-member-before-definition
+        ):
+            return self._catalog_dict  # pylint: disable=access-member-before-definition
 
         if self.input_catalog:
             return self.input_catalog.to_dict()
@@ -189,7 +202,9 @@ class TapMongoDB(Tap):
         result: dict[str, list[dict]] = {"streams": []}
         result["streams"].extend(self.connector.discover_catalog_entries())
 
-        self._catalog_dict: dict = result
+        self._catalog_dict: dict = (  # pylint: disable=attribute-defined-outside-init
+            result
+        )
         return self._catalog_dict
 
     def discover_streams(self) -> list[MongoDBCollectionStream]:
@@ -205,4 +220,4 @@ class TapMongoDB(Tap):
 
 
 if __name__ == "__main__":
-    TapMongoDB.cli()
+    TapMongoDB.cli()  # pylint: disable=no-value-for-parameter

@@ -1,6 +1,8 @@
-from functools import cached_property
+"""MongoDB/DocumentDB connector utility"""
+
+import sys
 from logging import Logger, getLogger
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -9,12 +11,19 @@ from singer_sdk._singerlib.catalog import CatalogEntry, MetadataMapping, Schema
 
 from tap_mongodb.schema import SCHEMA
 
+if sys.version_info[:2] >= (3, 7):
+    from backports.cached_property import cached_property
+else:
+    from functools import cached_property
+
 
 class MongoDBConnector:
+    """MongoDB/DocumentDB connector class"""
+
     def __init__(
         self,
         connection_string: str,
-        options: dict[str, Any],
+        options: Dict[str, Any],
         db_name: str,
         prefix: Optional[str] = None,
     ) -> None:
@@ -26,21 +35,24 @@ class MongoDBConnector:
 
     @cached_property
     def mongo_client(self) -> MongoClient:
+        """Provide a MongoClient instance. Client is cached and reused."""
         client: MongoClient = MongoClient(self._connection_string, **self._options)
         try:
             client.server_info()
-        except Exception as e:
-            raise RuntimeError("Could not connect to MongoDB") from e
+        except Exception as exception:
+            self._logger.exception("Could not connect to MongoDB")
+            raise RuntimeError("Could not connect to MongoDB") from exception
         return client
 
     @property
     def database(self) -> Database:
+        """Provide a Database instance."""
         return self.mongo_client[self._db_name]
 
     def get_fully_qualified_name(
         self,
         collection_name: str,
-        prefix: str | None = None,
+        prefix: Optional[str] = None,
         delimiter: str = "_",
     ) -> str:
         """Concatenates a fully qualified name from the parts."""
@@ -78,13 +90,13 @@ class MongoDBConnector:
             replication_key=None,  # Must be defined by user
         )
 
-    def discover_catalog_entries(self) -> list[dict[str, Any]]:
+    def discover_catalog_entries(self) -> List[Dict[str, Any]]:
         """Return a list of catalog entries from discovery.
 
         Returns:
             The discovered catalog entries as a list.
         """
-        result: list[dict] = []
+        result: List[Dict] = []
         for collection in self.database.list_collection_names():
             try:
                 self.database[collection].find_one()
