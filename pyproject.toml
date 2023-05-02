@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "menzenski-tap-mongodb"
-version = "0.1.1"
+version = "0.1.2"
 description = "`tap-mongodb` is a Singer tap for mongodb, built with the Meltano Singer SDK."
 readme = "README.md"
 authors = ["Matt Menzenski"]
@@ -18,7 +18,7 @@ python = "<3.12,>=3.7.2"
 singer-sdk = { version = "^0.22.1" }
 fs-s3fs = { version = "^1.1.1", optional = true }
 pymongo = "^4.3.3"
-"backports.cached-property" = { version = "^1.0.2", python = "<3.8" }
+"backports.cached-property" = { version = "^1.0.2" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.1"
