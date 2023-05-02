@@ -2,7 +2,7 @@
 
 from functools import cached_property
 from logging import Logger, getLogger
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -47,7 +47,7 @@ class MongoDBConnector:
     def get_fully_qualified_name(
         self,
         collection_name: str,
-        prefix: str | None = None,
+        prefix: Optional[str] = None,
         delimiter: str = "_",
     ) -> str:
         """Concatenates a fully qualified name from the parts."""
@@ -85,13 +85,13 @@ class MongoDBConnector:
             replication_key=None,  # Must be defined by user
         )
 
-    def discover_catalog_entries(self) -> list[dict[str, Any]]:
+    def discover_catalog_entries(self) -> List[Dict[str, Any]]:
         """Return a list of catalog entries from discovery.
 
         Returns:
             The discovered catalog entries as a list.
         """
-        result: list[dict] = []
+        result: List[Dict] = []
         for collection in self.database.list_collection_names():
             try:
                 self.database[collection].find_one()

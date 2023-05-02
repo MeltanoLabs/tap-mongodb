@@ -1,5 +1,7 @@
 """Tests standard tap features using the built-in SDK tests library."""
 
+from typing import List
+
 from pymongo.database import Database
 from pymongo.mongo_client import MongoClient
 from singer_sdk.testing import get_tap_test_class
@@ -32,7 +34,7 @@ def test_one_stream_is_discovered():
 
         # when the tap's discover_streams method is invoked
         tap: TapMongoDB = TapMongoDB(config=SAMPLE_CONFIG)
-        streams: list[MongoDBCollectionStream] = tap.discover_streams()
+        streams: List[MongoDBCollectionStream] = tap.discover_streams()
 
         # then a stream for that collection is returned
         for stream in streams:
