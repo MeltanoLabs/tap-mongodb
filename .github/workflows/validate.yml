@@ -37,6 +37,28 @@ jobs:
         run: poetry install
       - name: Run pre-commit checks
         uses: pre-commit/action@v3.0.0
+  smoke-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - 3.7
+          - 3.8
+          - 3.9
+          - '3.10'
+          - 3.11
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install poetry
+        run: pipx install poetry
+      - name: Install meltano
+        run: pipx install meltano
+      - name: Meltano install
+        run: meltano install
+      - name: Smoke test
+        run: meltano invoke tap-mongodb --about
   test:
     if: ${{ false }}  # TODO - not ready yet
     runs-on: ubuntu-latest
