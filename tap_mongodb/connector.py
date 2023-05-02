@@ -1,6 +1,6 @@
 """MongoDB/DocumentDB connector utility"""
 
-from functools import cached_property
+import sys
 from logging import Logger, getLogger
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +11,11 @@ from singer_sdk._singerlib.catalog import CatalogEntry, MetadataMapping, Schema
 
 from tap_mongodb.schema import SCHEMA
 
+if sys.version_info[:2] >= (3, 7):
+    from backports.cached_property import cached_property
+else:
+    from functools import cached_property
+
 
 class MongoDBConnector:
     """MongoDB/DocumentDB connector class"""
@@ -18,7 +23,7 @@ class MongoDBConnector:
     def __init__(
         self,
         connection_string: str,
-        options: dict[str, Any],
+        options: Dict[str, Any],
         db_name: str,
         prefix: Optional[str] = None,
     ) -> None:
