@@ -28,6 +28,8 @@ from singer_sdk.streams.core import (
 
 from tap_mongodb.connector import MongoDBConnector
 
+DEFAULT_START_DATE: str = "1970-01-01"
+
 
 def to_object_id(start_date_str: str) -> ObjectId:
     """Converts an ISO-8601 date string into a BSON ObjectId."""
@@ -176,11 +178,11 @@ class MongoDBCollectionStream(Stream):
                     self.logger.warning(
                         f"Replication key value {bookmark} cannot be parsed into ObjectId, falling back to default."
                     )
-                    start_date_str = self.config.get("start_date", "1970-01-01")
+                    start_date_str = self.config.get("start_date", DEFAULT_START_DATE)
                     self.logger.debug(f"using start_date_str: {start_date_str}")
                     start_date = to_object_id(start_date_str)
             else:
-                start_date_str = self.config.get("start_date", "1970-01-01")
+                start_date_str = self.config.get("start_date", DEFAULT_START_DATE)
                 self.logger.debug(f"using start_date_str: {start_date_str}")
                 start_date = to_object_id(start_date_str)
 
@@ -198,7 +200,8 @@ class MongoDBCollectionStream(Stream):
 
         elif self.replication_method == REPLICATION_LOG_BASED:
             change_stream_options = {"full_document": "updateLookup"}
-            if bookmark is not None:
+            if bookmark is not None and bookmark != DEFAULT_START_DATE:
+                self.logger.critical(f"bookmark: {bookmark}")
                 change_stream_options["resume_after"] = {"_data": bookmark}
             operation_types_allowlist: set = set(self.config.get("operation_types"))
             has_seen_a_record: bool = False
@@ -227,6 +230,7 @@ class MongoDBCollectionStream(Stream):
                             f"Unable to enable change streams on collection {collection.name}"
                         ) from operation_failure
                 else:
+                    self.logger.critical(f"operation_failure: {operation_failure}")
                     raise operation_failure
             except Exception as exception:
                 self.logger.critical(exception)
@@ -246,6 +250,26 @@ class MongoDBCollectionStream(Stream):
                     #    then yield that record (whose _id is set to the change stream's resume token, so that the
                     #    change stream can be resumed from this point by a later running of the tap).
                     #  - If a change stream is opened and there is at least one record, yield all records
+                    if (
+                        record is None
+                        and not has_seen_a_record
+                        and change_stream.resume_token is not None
+                    ):
+                        # if we're in this block, we're in MongoDB specifically - DocumentDB will have a None resume
+                        # token here. If we take no action, the tap will remain open and idle until a message appears
+                        # in the change stream, then it will yield that record and close. That's not ideal because it
+                        # doesn't need to wait around for activity. It can just yield a "dummy" record with the resume
+                        # token from the change stream, exit immediately, and then pick up processing the change stream
+                        # from this point the next time the tap is run. So that's what we do.
+                        yield {
+                            "_id": change_stream.resume_token["_data"],
+                            "document": None,
+                            "operationType": None,
+                            "clusterTime": None,
+                            "ns": None,
+                        }
+                        has_seen_a_record = True
+
                     if record is None and has_seen_a_record:
                         keep_open = False
                     if record is not None:
