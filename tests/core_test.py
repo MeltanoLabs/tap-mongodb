@@ -5,7 +5,7 @@ from singer_sdk.testing import get_tap_test_class
 from tap_mongodb.tap import TapMongoDB
 
 SAMPLE_CONFIG = {
-    "mongodb_connection_string": "mongodb://admin:password@localhost:27017/",
+    "mongodb_connection_string": "mongodb://admin:password@localhost:27017/test",
     "database": "test",
 }
 
