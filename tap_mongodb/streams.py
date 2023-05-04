@@ -29,6 +29,12 @@ from singer_sdk.streams.core import (
 from tap_mongodb.connector import MongoDBConnector
 
 
+def to_object_id(start_date_str: str) -> ObjectId:
+    """Converts an ISO-8601 date string into a BSON ObjectId."""
+    start_date_dt: datetime = strptime_to_utc(start_date_str)
+    return ObjectId.from_datetime(start_date_dt)
+
+
 class MongoDBCollectionStream(Stream):
     """Stream class for mongodb streams."""
 
@@ -163,19 +169,20 @@ class MongoDBCollectionStream(Stream):
         collection: Collection = self._connector.database[self._collection_name]
 
         if self.replication_method == REPLICATION_INCREMENTAL:
-            start_date: ObjectId | None = None
             if bookmark:
                 try:
                     start_date = ObjectId(bookmark)
                 except InvalidId:
                     self.logger.warning(
-                        f"Replication key value {bookmark} cannot be parsed into ObjectId."
+                        f"Replication key value {bookmark} cannot be parsed into ObjectId, falling back to default."
                     )
+                    start_date_str = self.config.get("start_date", "1970-01-01")
+                    self.logger.debug(f"using start_date_str: {start_date_str}")
+                    start_date = to_object_id(start_date_str)
             else:
                 start_date_str = self.config.get("start_date", "1970-01-01")
                 self.logger.debug(f"using start_date_str: {start_date_str}")
-                start_date_dt: datetime = strptime_to_utc(start_date_str)
-                start_date = ObjectId.from_datetime(start_date_dt)
+                start_date = to_object_id(start_date_str)
 
             for record in collection.find({"_id": {"$gt": start_date}}).sort(
                 [("_id", ASCENDING)]

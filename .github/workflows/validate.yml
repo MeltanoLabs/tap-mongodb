@@ -60,14 +60,18 @@ jobs:
       - name: Smoke test
         run: meltano invoke tap-mongodb --about
   test:
-    if: ${{ false }}  # TODO - not ready yet
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         mongo-version:
           - 3.6
           - 4.4
         python-version:
+          - 3.7
+          - 3.8
+          - 3.9
+          - '3.10'
           - 3.11
     services:
       mongo:
@@ -75,6 +79,7 @@ jobs:
         ports:
           - 27017:27017
         env:
+          MONGO_INITDB_DATABASE: test
           MONGO_INITDB_ROOT_USERNAME: admin
           MONGO_INITDB_ROOT_PASSWORD: password
         options: >-
