@@ -201,7 +201,6 @@ class MongoDBCollectionStream(Stream):
         elif self.replication_method == REPLICATION_LOG_BASED:
             change_stream_options = {"full_document": "updateLookup"}
             if bookmark is not None and bookmark != DEFAULT_START_DATE:
-                self.logger.critical(f"bookmark: {bookmark}")
                 change_stream_options["resume_after"] = {"_data": bookmark}
             operation_types_allowlist: set = set(self.config.get("operation_types"))
             has_seen_a_record: bool = False
