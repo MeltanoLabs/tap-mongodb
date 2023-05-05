@@ -77,9 +77,7 @@ class MongoDBCollectionStream(Stream):
             name=self.catalog_entry["tap_stream_id"],
         )
 
-    def _increment_stream_state(
-        self, latest_record: dict[str, Any], *, context: dict | None = None
-    ) -> None:
+    def _increment_stream_state(self, latest_record: dict[str, Any], *, context: dict | None = None) -> None:
         """Update state of stream or partition with data from the provided record.
 
         Raises `InvalidStreamSortException` is `self.is_sorted = True` and unsorted data
@@ -124,9 +122,7 @@ class MongoDBCollectionStream(Stream):
             check_sorted=self.check_sorted,
         )
 
-    def _generate_record_messages(
-        self, record: dict
-    ) -> Generator[singer.RecordMessage, None, None]:
+    def _generate_record_messages(self, record: dict) -> Generator[singer.RecordMessage, None, None]:
         """Write out a RECORD message.
 
         We are overriding the default implementation of this (private) method because the default behavior is to set
@@ -187,9 +183,9 @@ class MongoDBCollectionStream(Stream):
                 self.logger.debug(f"using start_date_str: {start_date_str}")
                 start_date = to_object_id(start_date_str)
 
-            for record in collection.find(
-                {"_id": {"$gt": start_date}}, no_cursor_timeout=True
-            ).sort([("_id", ASCENDING)]):
+            for record in collection.find({"_id": {"$gt": start_date}}, no_cursor_timeout=True).sort(
+                [("_id", ASCENDING)]
+            ):
                 object_id: ObjectId = record["_id"]
                 parsed_record = {
                     "_id": str(object_id),
@@ -212,8 +208,7 @@ class MongoDBCollectionStream(Stream):
             except OperationFailure as operation_failure:
                 if (
                     operation_failure.code == 136
-                    and "modifyChangeStreams has not been run"
-                    in operation_failure.details["errmsg"]
+                    and "modifyChangeStreams has not been run" in operation_failure.details["errmsg"]
                     and self.config["allow_modify_change_streams"]
                 ):
                     admin_db: Database = self._connector.mongo_client["admin"]
@@ -250,11 +245,7 @@ class MongoDBCollectionStream(Stream):
                     #    then yield that record (whose _id is set to the change stream's resume token, so that the
                     #    change stream can be resumed from this point by a later running of the tap).
                     #  - If a change stream is opened and there is at least one record, yield all records
-                    if (
-                        record is None
-                        and not has_seen_a_record
-                        and change_stream.resume_token is not None
-                    ):
+                    if record is None and not has_seen_a_record and change_stream.resume_token is not None:
                         # if we're in this block, we're in MongoDB specifically - DocumentDB will have a None resume
                         # token here. If we take no action, the tap will remain open and idle until a message appears
                         # in the change stream, then it will yield that record and close. That's not ideal because it

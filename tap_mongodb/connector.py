@@ -67,9 +67,7 @@ class MongoDBConnector:
 
     def discover_catalog_entry(self, collection_name: str) -> CatalogEntry:
         """Create `CatalogEntry` object for the given collection."""
-        unique_stream_id = self.get_fully_qualified_name(
-            collection_name, prefix=self._prefix
-        )
+        unique_stream_id = self.get_fully_qualified_name(collection_name, prefix=self._prefix)
 
         return CatalogEntry(
             tap_stream_id=unique_stream_id,
@@ -109,9 +107,7 @@ class MongoDBConnector:
                 )
                 continue
 
-            self._logger.info(
-                f"Discovered collection {self.database.name}.{collection}"
-            )
+            self._logger.info(f"Discovered collection {self.database.name}.{collection}")
             catalog_entry: CatalogEntry = self.discover_catalog_entry(collection)
             result.append(catalog_entry.to_dict())
 

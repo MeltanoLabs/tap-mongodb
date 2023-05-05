@@ -144,21 +144,15 @@ class TapMongoDB(Tap):
 
     def _get_mongo_connection_string(self) -> str | None:
         """Get configured MongoDB connection URI."""
-        documentdb_credential_json_string = self.config.get(
-            "documentdb_credential_json_string", None
-        )
+        documentdb_credential_json_string = self.config.get("documentdb_credential_json_string", None)
         if documentdb_credential_json_string is not None:
             self.logger.debug("Using documentdb_credential_json_string")
-            documentdb_credential_json: dict[str, Any] = json.loads(
-                documentdb_credential_json_string
-            )
+            documentdb_credential_json: dict[str, Any] = json.loads(documentdb_credential_json_string)
             username: str = documentdb_credential_json.get("username")
             password: str = documentdb_credential_json.get("password")
             host: str = documentdb_credential_json.get("host")
             port: int = documentdb_credential_json.get("port")
-            connection_string = (
-                f"mongodb://{quote_plus(username)}:{quote_plus(password)}@{host}:{port}"
-            )
+            connection_string = f"mongodb://{quote_plus(username)}:{quote_plus(password)}@{host}:{port}"
             return connection_string
 
         self.logger.debug("Using mongodb_connection_string")
@@ -190,10 +184,7 @@ class TapMongoDB(Tap):
         Returns:
             The tap's catalog as a dict
         """
-        if (
-            hasattr(self, "_catalog_dict")
-            and self._catalog_dict  # pylint: disable=access-member-before-definition
-        ):
+        if hasattr(self, "_catalog_dict") and self._catalog_dict:  # pylint: disable=access-member-before-definition
             return self._catalog_dict  # pylint: disable=access-member-before-definition
 
         if self.input_catalog:
@@ -202,9 +193,7 @@ class TapMongoDB(Tap):
         result: dict[str, list[dict]] = {"streams": []}
         result["streams"].extend(self.connector.discover_catalog_entries())
 
-        self._catalog_dict: dict = (  # pylint: disable=attribute-defined-outside-init
-            result
-        )
+        self._catalog_dict: dict = result  # pylint: disable=attribute-defined-outside-init
         return self._catalog_dict
 
     def discover_streams(self) -> list[MongoDBCollectionStream]:
