@@ -46,7 +46,6 @@ class MongoDBCollectionStream(Stream):
     # alphanumerically sortable replication key. Python __gt__ and __lt__ are
     # used to compare the replication key values. This works for most cases.
     is_timestamp_replication_key = False
-    is_sorted = True
 
     # No conformance level is set by default since this is a generic stream
     TYPE_CONFORMANCE_LEVEL = TypeConformanceLevel.NONE
@@ -74,6 +73,16 @@ class MongoDBCollectionStream(Stream):
             schema=self.catalog_entry["schema"],
             name=self.catalog_entry["tap_stream_id"],
         )
+
+    @property
+    def is_sorted(self) -> bool:
+        """Return a boolean indicating whether the replication key is alphanumerically sortable.
+
+        When the tap is running in incremental mode, it is sorted - the replication key value is an ISO-8601-formatted
+        string, and these are alphanumerically sortable.
+
+        When the tap is running in log-based mode, it is not sorted - the replication key value here is a hex string."""
+        return self.replication_method == REPLICATION_INCREMENTAL
 
     def _increment_stream_state(self, latest_record: dict[str, Any], *, context: dict | None = None) -> None:
         """Update state of stream or partition with data from the provided record.
