@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Generator, Iterable
 
-from bson.errors import InvalidId
 from bson.objectid import ObjectId
 from pendulum import DateTime
 from pymongo import ASCENDING
@@ -14,7 +13,6 @@ from pymongo.database import Database
 from pymongo.errors import OperationFailure
 from singer_sdk import PluginBase as TapBaseClass
 from singer_sdk import _singerlib as singer
-from singer_sdk._singerlib.utils import strptime_to_utc
 from singer_sdk.helpers._catalog import pop_deselected_record_properties
 from singer_sdk.helpers._state import increment_state
 from singer_sdk.helpers._typing import conform_record_data_types
@@ -33,7 +31,7 @@ DEFAULT_START_DATE: str = "1970-01-01"
 
 def to_object_id(start_date_str: str) -> ObjectId:
     """Converts an ISO-8601 date string into a BSON ObjectId."""
-    start_date_dt: datetime = strptime_to_utc(start_date_str)
+    start_date_dt: datetime = datetime.fromisoformat(start_date_str)
     return ObjectId.from_datetime(start_date_dt)
 
 
@@ -48,6 +46,7 @@ class MongoDBCollectionStream(Stream):
     # alphanumerically sortable replication key. Python __gt__ and __lt__ are
     # used to compare the replication key values. This works for most cases.
     is_timestamp_replication_key = False
+    is_sorted = True
 
     # No conformance level is set by default since this is a generic stream
     TYPE_CONFORMANCE_LEVEL = TypeConformanceLevel.NONE
@@ -76,9 +75,7 @@ class MongoDBCollectionStream(Stream):
             name=self.catalog_entry["tap_stream_id"],
         )
 
-    def _increment_stream_state(
-        self, latest_record: dict[str, Any], *, context: dict | None = None
-    ) -> None:
+    def _increment_stream_state(self, latest_record: dict[str, Any], *, context: dict | None = None) -> None:
         """Update state of stream or partition with data from the provided record.
 
         Raises `InvalidStreamSortException` is `self.is_sorted = True` and unsorted data
@@ -123,9 +120,7 @@ class MongoDBCollectionStream(Stream):
             check_sorted=self.check_sorted,
         )
 
-    def _generate_record_messages(
-        self, record: dict
-    ) -> Generator[singer.RecordMessage, None, None]:
+    def _generate_record_messages(self, record: dict) -> Generator[singer.RecordMessage, None, None]:
         """Write out a RECORD message.
 
         We are overriding the default implementation of this (private) method because the default behavior is to set
@@ -172,26 +167,19 @@ class MongoDBCollectionStream(Stream):
 
         if self.replication_method == REPLICATION_INCREMENTAL:
             if bookmark:
-                try:
-                    start_date = ObjectId(bookmark)
-                except InvalidId:
-                    self.logger.warning(
-                        f"Replication key value {bookmark} cannot be parsed into ObjectId, falling back to default."
-                    )
-                    start_date_str = self.config.get("start_date", DEFAULT_START_DATE)
-                    self.logger.debug(f"using start_date_str: {start_date_str}")
-                    start_date = to_object_id(start_date_str)
+                self.logger.debug(f"using bookmark: {bookmark}")
+                start_date = to_object_id(bookmark)
             else:
                 start_date_str = self.config.get("start_date", DEFAULT_START_DATE)
                 self.logger.debug(f"using start_date_str: {start_date_str}")
                 start_date = to_object_id(start_date_str)
 
-            for record in collection.find({"_id": {"$gt": start_date}}).sort(
+            for record in collection.find({"_id": {"$gt": start_date}}, no_cursor_timeout=True).sort(
                 [("_id", ASCENDING)]
             ):
                 object_id: ObjectId = record["_id"]
                 parsed_record = {
-                    "_id": str(object_id),
+                    "_id": object_id.generation_time.isoformat(),
                     "document": record,
                 }
                 if should_add_metadata:
@@ -201,6 +189,7 @@ class MongoDBCollectionStream(Stream):
         elif self.replication_method == REPLICATION_LOG_BASED:
             change_stream_options = {"full_document": "updateLookup"}
             if bookmark is not None and bookmark != DEFAULT_START_DATE:
+                self.logger.debug(f"using bookmark: {bookmark}")
                 change_stream_options["resume_after"] = {"_data": bookmark}
             operation_types_allowlist: set = set(self.config.get("operation_types"))
             has_seen_a_record: bool = False
@@ -211,8 +200,7 @@ class MongoDBCollectionStream(Stream):
             except OperationFailure as operation_failure:
                 if (
                     operation_failure.code == 136
-                    and "modifyChangeStreams has not been run"
-                    in operation_failure.details["errmsg"]
+                    and "modifyChangeStreams has not been run" in operation_failure.details["errmsg"]
                     and self.config["allow_modify_change_streams"]
                 ):
                     admin_db: Database = self._connector.mongo_client["admin"]
@@ -249,11 +237,7 @@ class MongoDBCollectionStream(Stream):
                     #    then yield that record (whose _id is set to the change stream's resume token, so that the
                     #    change stream can be resumed from this point by a later running of the tap).
                     #  - If a change stream is opened and there is at least one record, yield all records
-                    if (
-                        record is None
-                        and not has_seen_a_record
-                        and change_stream.resume_token is not None
-                    ):
+                    if record is None and not has_seen_a_record and change_stream.resume_token is not None:
                         # if we're in this block, we're in MongoDB specifically - DocumentDB will have a None resume
                         # token here. If we take no action, the tap will remain open and idle until a message appears
                         # in the change stream, then it will yield that record and close. That's not ideal because it

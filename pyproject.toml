@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "menzenski-tap-mongodb"
-version = "0.1.4"
+version = "0.1.5"
 description = "`tap-mongodb` is a Singer tap for mongodb, built with the Meltano Singer SDK."
 readme = "README.md"
 authors = ["Matt Menzenski"]
@@ -41,6 +41,10 @@ warn_unused_configs = true
 [build-system]
 requires = ["poetry-core>=1.0.8"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 120
+target-version = ['py311']
 
 [tool.poetry.scripts]
 # CLI declaration
