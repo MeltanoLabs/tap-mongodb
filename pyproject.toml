@@ -42,6 +42,10 @@ warn_unused_configs = true
 requires = ["poetry-core>=1.0.8"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.black]
+line-length = 120
+target-version = ['py311']
+
 [tool.poetry.scripts]
 # CLI declaration
 tap-mongodb = 'tap_mongodb.tap:TapMongoDB.cli'
