@@ -48,6 +48,7 @@ class MongoDBCollectionStream(Stream):
     # alphanumerically sortable replication key. Python __gt__ and __lt__ are
     # used to compare the replication key values. This works for most cases.
     is_timestamp_replication_key = False
+    is_sorted = True
 
     # No conformance level is set by default since this is a generic stream
     TYPE_CONFORMANCE_LEVEL = TypeConformanceLevel.NONE
