@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Generator, Iterable
 
-from bson.errors import InvalidId
 from bson.objectid import ObjectId
 from pendulum import DateTime
 from pymongo import ASCENDING
@@ -14,7 +13,6 @@ from pymongo.database import Database
 from pymongo.errors import OperationFailure
 from singer_sdk import PluginBase as TapBaseClass
 from singer_sdk import _singerlib as singer
-from singer_sdk._singerlib.utils import strptime_to_utc
 from singer_sdk.helpers._catalog import pop_deselected_record_properties
 from singer_sdk.helpers._state import increment_state
 from singer_sdk.helpers._typing import conform_record_data_types
@@ -33,7 +31,7 @@ DEFAULT_START_DATE: str = "1970-01-01"
 
 def to_object_id(start_date_str: str) -> ObjectId:
     """Converts an ISO-8601 date string into a BSON ObjectId."""
-    start_date_dt: datetime = strptime_to_utc(start_date_str)
+    start_date_dt: datetime = datetime.fromisoformat(start_date_str)
     return ObjectId.from_datetime(start_date_dt)
 
 
@@ -169,15 +167,8 @@ class MongoDBCollectionStream(Stream):
 
         if self.replication_method == REPLICATION_INCREMENTAL:
             if bookmark:
-                try:
-                    start_date = ObjectId(bookmark)
-                except InvalidId:
-                    self.logger.warning(
-                        f"Replication key value {bookmark} cannot be parsed into ObjectId, falling back to default."
-                    )
-                    start_date_str = self.config.get("start_date", DEFAULT_START_DATE)
-                    self.logger.debug(f"using start_date_str: {start_date_str}")
-                    start_date = to_object_id(start_date_str)
+                self.logger.debug(f"using bookmark: {bookmark}")
+                start_date = to_object_id(bookmark)
             else:
                 start_date_str = self.config.get("start_date", DEFAULT_START_DATE)
                 self.logger.debug(f"using start_date_str: {start_date_str}")
@@ -188,7 +179,7 @@ class MongoDBCollectionStream(Stream):
             ):
                 object_id: ObjectId = record["_id"]
                 parsed_record = {
-                    "_id": str(object_id),
+                    "_id": object_id.generation_time.isoformat(),
                     "document": record,
                 }
                 if should_add_metadata:
@@ -198,6 +189,7 @@ class MongoDBCollectionStream(Stream):
         elif self.replication_method == REPLICATION_LOG_BASED:
             change_stream_options = {"full_document": "updateLookup"}
             if bookmark is not None and bookmark != DEFAULT_START_DATE:
+                self.logger.debug(f"using bookmark: {bookmark}")
                 change_stream_options["resume_after"] = {"_data": bookmark}
             operation_types_allowlist: set = set(self.config.get("operation_types"))
             has_seen_a_record: bool = False
