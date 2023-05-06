@@ -183,9 +183,7 @@ class MongoDBCollectionStream(Stream):
                 self.logger.debug(f"using start_date_str: {start_date_str}")
                 start_date = to_object_id(start_date_str)
 
-            for record in collection.find({"_id": {"$gt": start_date}}, no_cursor_timeout=True).sort(
-                [("_id", ASCENDING)]
-            ):
+            for record in collection.find({"_id": {"$gt": start_date}}).sort([("_id", ASCENDING)]):
                 object_id: ObjectId = record["_id"]
                 parsed_record = {
                     "_id": object_id.generation_time.isoformat(),
