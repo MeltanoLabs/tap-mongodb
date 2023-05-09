@@ -3,15 +3,16 @@
 SCHEMA = {
     "properties": {
         "_id": {
-            "description": "The document's _id",
+            "description": "Unique identifier for one record",
             "type": [
                 "string",
                 "null",
             ],
         },
-        "object_id_created_at": {
+        "object_id": {
+            "description": "ObjectId ID of the record. 24 character hex string.",
             "type": [
-                "integer",
+                "string",
                 "null",
             ],
         },
@@ -45,6 +46,7 @@ SCHEMA = {
             ],
         },
         "ns": {
+            "description": "MongoDB namespace, indicating database name and collection name.",
             "additionalProperties": True,
             "type": [
                 "object",
@@ -52,6 +54,7 @@ SCHEMA = {
             ],
         },
         "operationType": {
+            "description": "MongoDB namespace, indicating database name and collection name.",
             "type": [
                 "string",
                 "null",
