@@ -83,7 +83,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: poetry
       - name: Install dependencies
-        run: poetry install --with dev
+        run: poetry install
       - name: Start MongoDB
         uses: supercharge/mongodb-github-action@1.9.0
         with:
