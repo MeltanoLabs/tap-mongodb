@@ -73,20 +73,6 @@ jobs:
           - 3.9
           - '3.10'
           - 3.11
-    services:
-      mongo:
-        image: mongo:${{ matrix.mongo-version}}
-        ports:
-          - 27017:27017
-        env:
-          MONGO_INITDB_DATABASE: test
-          MONGO_INITDB_ROOT_USERNAME: admin
-          MONGO_INITDB_ROOT_PASSWORD: password
-        options: >-
-          --health-cmd "mongo localhost:27017/test --quiet --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v3
       - name: Install poetry
@@ -98,5 +84,12 @@ jobs:
           cache: poetry
       - name: Install dependencies
         run: poetry install --with dev
+      - name: Start MongoDB
+        uses: supercharge/mongodb-github-action@1.9.0
+        with:
+          mongodb-version: ${{ matrix.mongo-version }}
+          mongodb-username: admin
+          mongodb-password: password
+          mongodb-db: test
       - name: Test with pytest
         run: poetry run pytest

@@ -25,14 +25,15 @@ from singer_sdk.streams.core import (
 )
 
 from tap_mongodb.connector import MongoDBConnector
+from tap_mongodb.types import IncrementalId
 
 DEFAULT_START_DATE: str = "1970-01-01"
 
 
-def to_object_id(start_date_str: str) -> ObjectId:
+def to_object_id(replication_key_value: str) -> ObjectId:
     """Converts an ISO-8601 date string into a BSON ObjectId."""
-    start_date_dt: datetime = datetime.fromisoformat(start_date_str)
-    return ObjectId.from_datetime(start_date_dt)
+    incremental_id: IncrementalId = IncrementalId.from_string(replication_key_value)
+    return incremental_id.object_id
 
 
 class MongoDBCollectionStream(Stream):
@@ -185,8 +186,9 @@ class MongoDBCollectionStream(Stream):
 
             for record in collection.find({"_id": {"$gt": start_date}}).sort([("_id", ASCENDING)]):
                 object_id: ObjectId = record["_id"]
+                incremental_id: IncrementalId = IncrementalId.from_object_id(object_id)
                 parsed_record = {
-                    "_id": object_id.generation_time.isoformat(),
+                    "_id": str(incremental_id),
                     "document": record,
                 }
                 if should_add_metadata:

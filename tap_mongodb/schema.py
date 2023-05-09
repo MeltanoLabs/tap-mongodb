@@ -9,6 +9,12 @@ SCHEMA = {
                 "null",
             ],
         },
+        "object_id_created_at": {
+            "type": [
+                "integer",
+                "null",
+            ],
+        },
         "_sdc_batched_at": {
             "format": "date-time",
             "type": [
