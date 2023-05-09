@@ -20,7 +20,7 @@ class IncrementalId:
       at-least-once delivery semantics of Meltano taps)
     """
 
-    PATTERN = re.compile(r"^(?P<dt>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00)(\|(?P<oid>[a-f0-9]{24}))?$")
+    PATTERN = re.compile(r"^(?P<dt>\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}\+00:00)?)(\|(?P<oid>[a-f0-9]{24}))?$")
 
     # pylint: disable-next=used-before-assignment
     def __init__(self, datetime_part: datetime, object_id_part: Optional[str] = None) -> None:
