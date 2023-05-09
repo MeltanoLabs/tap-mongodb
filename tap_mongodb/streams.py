@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Generator, Iterable
+from typing import Any, Generator, Iterable, Optional
 
 from bson.objectid import ObjectId
 from pendulum import DateTime
@@ -25,21 +25,20 @@ from singer_sdk.streams.core import (
 )
 
 from tap_mongodb.connector import MongoDBConnector
+from tap_mongodb.types import IncrementalId
 
 DEFAULT_START_DATE: str = "1970-01-01"
 
 
-def to_object_id(start_date_str: str) -> ObjectId:
+def to_object_id(replication_key_value: str) -> ObjectId:
     """Converts an ISO-8601 date string into a BSON ObjectId."""
-    start_date_dt: datetime = datetime.fromisoformat(start_date_str)
-    return ObjectId.from_datetime(start_date_dt)
+    incremental_id: IncrementalId = IncrementalId.from_string(replication_key_value)
+    return incremental_id.object_id
 
 
 class MongoDBCollectionStream(Stream):
     """Stream class for mongodb streams."""
 
-    # The output stream will always have _id as the primary key
-    primary_keys = ["_id"]
     replication_key = "_id"
 
     # Disable timestamp replication keys. One caveat is this relies on an
@@ -73,6 +72,19 @@ class MongoDBCollectionStream(Stream):
             schema=self.catalog_entry["schema"],
             name=self.catalog_entry["tap_stream_id"],
         )
+
+    @property
+    def primary_keys(self) -> Optional[list[str]]:
+        """If running in log-based replication mode, use the Change Event ID as the primary key. If running instead in
+        incremental replication mode, use the document's ObjectId."""
+        if self.replication_method == REPLICATION_LOG_BASED:
+            return ["_id"]
+        return ["object_id"]
+
+    @primary_keys.setter
+    def primary_keys(self, new_value: list[str]) -> None:
+        """Set primary keys for the stream."""
+        self._primary_keys = new_value
 
     @property
     def is_sorted(self) -> bool:
@@ -185,9 +197,17 @@ class MongoDBCollectionStream(Stream):
 
             for record in collection.find({"_id": {"$gt": start_date}}).sort([("_id", ASCENDING)]):
                 object_id: ObjectId = record["_id"]
+                incremental_id: IncrementalId = IncrementalId.from_object_id(object_id)
                 parsed_record = {
-                    "_id": object_id.generation_time.isoformat(),
+                    "_id": str(incremental_id),
+                    "object_id": str(object_id),
                     "document": record,
+                    "operationType": None,
+                    "clusterTime": None,
+                    "ns": {
+                        "coll": collection.name,
+                        "db": collection.database.name,
+                    },
                 }
                 if should_add_metadata:
                     parsed_record["_sdc_batched_at"] = datetime.utcnow()
@@ -253,6 +273,7 @@ class MongoDBCollectionStream(Stream):
                         # from this point the next time the tap is run. So that's what we do.
                         yield {
                             "_id": change_stream.resume_token["_data"],
+                            "object_id": None,
                             "document": None,
                             "operationType": None,
                             "clusterTime": None,
@@ -267,8 +288,11 @@ class MongoDBCollectionStream(Stream):
                         if operation_type not in operation_types_allowlist:
                             continue
                         cluster_time: datetime = record["clusterTime"].as_datetime()
+                        document = record["fullDocument"]
+                        object_id: Optional[ObjectId] = document["_id"] if "_id" in document else None
                         parsed_record = {
                             "_id": record["_id"]["_data"],
+                            "object_id": str(object_id) if object_id is not None else None,
                             "document": record["fullDocument"],
                             "operationType": operation_type,
                             "clusterTime": cluster_time.isoformat(),
