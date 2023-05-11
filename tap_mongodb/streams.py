@@ -277,7 +277,7 @@ class MongoDBCollectionStream(Stream):
                             "document": None,
                             "operation_type": None,
                             "cluster_time": None,
-                            "ns": None,
+                            "namespace": None,
                         }
                         has_seen_a_record = True
 
