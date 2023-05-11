@@ -73,13 +73,13 @@ class MongoDBConnector:
             tap_stream_id=unique_stream_id,
             stream=unique_stream_id,
             table=collection_name,
-            key_properties=["_id"],
+            key_properties=["replication_key"],
             schema=Schema.from_dict(SCHEMA),
             replication_method=None,  # Must be defined by user
             metadata=MetadataMapping.get_standard_metadata(
                 schema=SCHEMA,
                 replication_method=None,  # Must be defined by user
-                key_properties=["_id"],
+                key_properties=["replication_key"],
                 valid_replication_keys=None,  # Must be defined by user
             ),
             database=None,  # Expects single-database context
