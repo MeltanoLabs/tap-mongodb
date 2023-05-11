@@ -94,7 +94,7 @@ plugins:
         - '*.*'
       metadata:
         '*':
-          replication-key: _id
+          replication-key: replication_key
           replication-method: INCREMENTAL
   loaders:
     - name: target-jsonl

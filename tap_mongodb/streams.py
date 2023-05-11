@@ -39,7 +39,7 @@ def to_object_id(replication_key_value: str) -> ObjectId:
 class MongoDBCollectionStream(Stream):
     """Stream class for mongodb streams."""
 
-    replication_key = "_id"
+    replication_key = "replication_key"
 
     # Disable timestamp replication keys. One caveat is this relies on an
     # alphanumerically sortable replication key. Python __gt__ and __lt__ are
@@ -78,7 +78,7 @@ class MongoDBCollectionStream(Stream):
         """If running in log-based replication mode, use the Change Event ID as the primary key. If running instead in
         incremental replication mode, use the document's ObjectId."""
         if self.replication_method == REPLICATION_LOG_BASED:
-            return ["_id"]
+            return ["replication_key"]
         return ["object_id"]
 
     @primary_keys.setter
@@ -188,25 +188,25 @@ class MongoDBCollectionStream(Stream):
 
         if self.replication_method == REPLICATION_INCREMENTAL:
             if bookmark:
-                self.logger.debug(f"using bookmark: {bookmark}")
+                self.logger.debug(f"using existing bookmark: {bookmark}")
                 start_date = to_object_id(bookmark)
             else:
                 start_date_str = self.config.get("start_date", DEFAULT_START_DATE)
-                self.logger.debug(f"using start_date_str: {start_date_str}")
+                self.logger.debug(f"no bookmark - using start date: {start_date_str}")
                 start_date = to_object_id(start_date_str)
 
             for record in collection.find({"_id": {"$gt": start_date}}).sort([("_id", ASCENDING)]):
                 object_id: ObjectId = record["_id"]
                 incremental_id: IncrementalId = IncrementalId.from_object_id(object_id)
                 parsed_record = {
-                    "_id": str(incremental_id),
+                    "replication_key": str(incremental_id),
                     "object_id": str(object_id),
                     "document": record,
-                    "operationType": None,
-                    "clusterTime": None,
-                    "ns": {
-                        "coll": collection.name,
-                        "db": collection.database.name,
+                    "operation_type": None,
+                    "cluster_time": None,
+                    "namespace": {
+                        "database": collection.database.name,
+                        "collection": collection.name,
                     },
                 }
                 if should_add_metadata:
@@ -272,11 +272,11 @@ class MongoDBCollectionStream(Stream):
                         # token from the change stream, exit immediately, and then pick up processing the change stream
                         # from this point the next time the tap is run. So that's what we do.
                         yield {
-                            "_id": change_stream.resume_token["_data"],
+                            "replication_key": change_stream.resume_token["_data"],
                             "object_id": None,
                             "document": None,
-                            "operationType": None,
-                            "clusterTime": None,
+                            "operation_type": None,
+                            "cluster_time": None,
                             "ns": None,
                         }
                         has_seen_a_record = True
@@ -291,12 +291,15 @@ class MongoDBCollectionStream(Stream):
                         document = record["fullDocument"]
                         object_id: Optional[ObjectId] = document["_id"] if "_id" in document else None
                         parsed_record = {
-                            "_id": record["_id"]["_data"],
+                            "replication_key": record["_id"]["_data"],
                             "object_id": str(object_id) if object_id is not None else None,
                             "document": record["fullDocument"],
-                            "operationType": operation_type,
-                            "clusterTime": cluster_time.isoformat(),
-                            "ns": record["ns"],
+                            "operation_type": operation_type,
+                            "cluster_time": cluster_time.isoformat(),
+                            "namespace": {
+                                "database": record["ns"]["db"],
+                                "collection": record["ns"]["coll"],
+                            },
                         }
                         if should_add_metadata:
                             parsed_record["_sdc_extracted_at"] = cluster_time
