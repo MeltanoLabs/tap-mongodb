@@ -93,3 +93,21 @@ jobs:
           mongodb-db: test
       - name: Test with pytest
         run: poetry run pytest
+  test_version:
+    name: Test poetry version command
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install poetry
+        run: pipx install poetry
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version-file: .python-version
+      - name: Get version number
+        run: |
+          echo "version=$(poetry version -s)" >> "$GITHUB_ENV"
+      - name: Print version
+        run: |-
+          echo "package version: ${{ env.version }}"
