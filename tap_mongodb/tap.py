@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import quote_plus
 
 from singer_sdk import Tap
@@ -125,6 +125,18 @@ class TapMongoDB(Tap):
                 "update",
             ],
         ),
+        th.Property(
+            "stream_maps",
+            th.ObjectType(),
+            required=False,
+            description="Stream maps. See https://sdk.meltano.com/en/latest/stream_maps.html for documentation.",
+        ),
+        th.Property(
+            "stream_map_config",
+            th.ObjectType(),
+            required=False,
+            description="Stream map config. See https://sdk.meltano.com/en/latest/stream_maps.html for documentation.",
+        ),
     ).to_dict()
     config_jsonschema["properties"]["operation_types"]["items"]["enum"] = [
         "create",
@@ -142,7 +154,7 @@ class TapMongoDB(Tap):
         "update",
     ]
 
-    def _get_mongo_connection_string(self) -> str | None:
+    def _get_mongo_connection_string(self) -> Optional[str]:
         """Get configured MongoDB connection URI."""
         documentdb_credential_json_string = self.config.get("documentdb_credential_json_string", None)
         if documentdb_credential_json_string is not None:
