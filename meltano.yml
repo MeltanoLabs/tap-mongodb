@@ -79,6 +79,14 @@ plugins:
             - insert
             - replace
             - update
+        - name: stream_maps
+          kind: object
+          description: |
+            Stream maps. See https://sdk.meltano.com/en/latest/stream_maps.html for documentation.
+        - name: stream_map_config
+          kind: object
+          description: |
+            Stream map config. See https://sdk.meltano.com/en/latest/stream_maps.html for documentation.
       settings_group_validation:
         # yamllint disable rule:hyphens
         -   -
