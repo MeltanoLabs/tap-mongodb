@@ -68,6 +68,25 @@ class TapMongoDB(Tap):
             ),
         ),
         th.Property(
+            "datetime_conversion",
+            th.StringType,
+            required=False,
+            default="datetime",
+            description=(
+                "Parameter passed to MongoClient 'datetime_conversion' parameter. See documentation at "
+                "https://pymongo.readthedocs.io/en/stable/examples/datetimes.html#handling-out-of-range-datetimes "
+                "for details. The default value is 'datetime', which will throw a bson.errors.InvalidBson error "
+                "if a document contains a date outside the range of datetime.MINYEAR (year 1) to datetime.MAXYEAR "
+                "(9999)."
+            ),
+            allowed_values=[
+                "datetime_ms",
+                "datetime",
+                "datetime_auto",
+                "datetime_clamp",
+            ],
+        ),
+        th.Property(
             "prefix",
             th.StringType,
             required=False,
@@ -186,6 +205,7 @@ class TapMongoDB(Tap):
             self._get_mongo_connection_string(),
             self._get_mongo_options(),
             self.config.get("database"),
+            self.config.get("datetime_conversion"),
             prefix=self.config.get("prefix", None),
         )
 

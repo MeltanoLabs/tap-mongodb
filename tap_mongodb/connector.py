@@ -11,7 +11,7 @@ from singer_sdk._singerlib.catalog import CatalogEntry, MetadataMapping, Schema
 
 from tap_mongodb.schema import SCHEMA
 
-if sys.version_info[:2] >= (3, 7):
+if sys.version_info[:2] < (3, 8):
     from backports.cached_property import cached_property
 else:
     from functools import cached_property
@@ -20,23 +20,27 @@ else:
 class MongoDBConnector:
     """MongoDB/DocumentDB connector class"""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         connection_string: str,
         options: Dict[str, Any],
         db_name: str,
+        datetime_conversion: str,
         prefix: Optional[str] = None,
     ) -> None:
         self._connection_string = connection_string
         self._options = options
         self._db_name = db_name
+        self._datetime_conversion: str = datetime_conversion
         self._prefix: Optional[str] = prefix
         self._logger: Logger = getLogger(__name__)
 
     @cached_property
     def mongo_client(self) -> MongoClient:
         """Provide a MongoClient instance. Client is cached and reused."""
-        client: MongoClient = MongoClient(self._connection_string, **self._options)
+        client: MongoClient = MongoClient(
+            self._connection_string, datetime_conversion=self._datetime_conversion, **self._options
+        )
         try:
             client.server_info()
         except Exception as exception:
