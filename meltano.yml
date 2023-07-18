@@ -42,6 +42,15 @@ plugins:
             connection string options when using documentdb_credential_json_string. For example, when set to
             the string `{\"tls\":\"true\",\"tlsCAFile\":\"my-ca-bundle.pem\"}`, the options
             `tls=true&tlsCAFile=my-ca-bundle.pem` will be passed to the MongoClient.
+        - name: datetime_conversion
+          kind: string
+          description: |
+            Parameter passed to MongoClient 'datetime_conversion' parameter. See documentation at
+            https://pymongo.readthedocs.io/en/stable/examples/datetimes.html#handling-out-of-range-datetimes
+            for details. The default value is 'datetime', which will throw a bson.errors.InvalidBson error
+            if a document contains a date outside the range of datetime.MINYEAR (year 1) to datetime.MAXYEAR
+            (9999).
+          value: datetime
         - name: prefix
           kind: string
           description: |
