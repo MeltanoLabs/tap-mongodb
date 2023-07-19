@@ -31,7 +31,7 @@ class MongoDBConnector:
         self._connection_string = connection_string
         self._options = options
         self._db_name = db_name
-        self._datetime_conversion: str = datetime_conversion
+        self._datetime_conversion: str = datetime_conversion.upper()
         self._prefix: Optional[str] = prefix
         self._logger: Logger = getLogger(__name__)
 
