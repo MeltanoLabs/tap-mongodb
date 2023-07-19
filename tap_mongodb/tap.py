@@ -78,6 +78,7 @@ class TapMongoDB(Tap):
                 "for details. The default value is 'datetime', which will throw a bson.errors.InvalidBson error "
                 "if a document contains a date outside the range of datetime.MINYEAR (year 1) to datetime.MAXYEAR "
                 "(9999). The allowed values correspond to the enumeration members here: "
+                # pylint: disable-next=line-too-long
                 "https://github.com/mongodb/mongo-python-driver/blob/e23eb7691e6e2905a77fc39a114d000ddf057e47/bson/codec_options.py#L192-L224"
                 " (they will be uppercased by the tap)."
             ),
