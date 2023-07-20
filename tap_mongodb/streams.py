@@ -243,6 +243,13 @@ class MongoDBCollectionStream(Stream):
                         raise RuntimeError(
                             f"Unable to enable change streams on collection {collection.name}"
                         ) from operation_failure
+                elif (
+                    operation_failure.code == 286
+                    and "as the resume point may no longer be in the oplog." in operation_failure.details["error"]
+                ):
+                    self.logger.warning("Unable to resume change stream from resume token. Resetting resume token.")
+                    change_stream_options.pop("resume_after", None)
+                    change_stream = collection.watch(**change_stream_options)
                 else:
                     self.logger.critical(f"operation_failure: {operation_failure}")
                     raise operation_failure
