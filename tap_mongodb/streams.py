@@ -245,7 +245,7 @@ class MongoDBCollectionStream(Stream):
                         ) from operation_failure
                 elif (
                     operation_failure.code == 286
-                    and "as the resume point may no longer be in the oplog." in operation_failure.details["error"]
+                    and "as the resume point may no longer be in the oplog." in operation_failure.details["errmsg"]
                 ):
                     self.logger.warning("Unable to resume change stream from resume token. Resetting resume token.")
                     change_stream_options.pop("resume_after", None)
