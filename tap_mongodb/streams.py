@@ -11,6 +11,7 @@ from pymongo import ASCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import OperationFailure
+from pymongo.typings import _DocumentType
 from singer_sdk import PluginBase as TapBaseClass
 from singer_sdk import _singerlib as singer
 from singer_sdk.helpers._catalog import pop_deselected_record_properties
@@ -251,7 +252,7 @@ class MongoDBCollectionStream(Stream):
                     change_stream_options.pop("resume_after", None)
                     change_stream = collection.watch(**change_stream_options)
                 else:
-                    self.logger.critical(f"operation_failure: {operation_failure}")
+                    self.logger.critical(f"operation_failure on collection.watch: {operation_failure}")
                     raise operation_failure
             except Exception as exception:
                 self.logger.critical(exception)
@@ -259,7 +260,20 @@ class MongoDBCollectionStream(Stream):
 
             with change_stream:
                 while change_stream.alive and keep_open:
-                    record = change_stream.try_next()
+                    record: Optional[_DocumentType]
+                    try:
+                        record = change_stream.try_next()
+                    except OperationFailure as operation_failure:
+                        if (
+                            operation_failure.code == 286
+                            and "as the resume point may no longer be in the oplog."
+                            in operation_failure.details["errmsg"]
+                        ):
+                            self.logger.warning(f"operation_failure on try_next: {operation_failure}")
+                            record = None
+                        else:
+                            self.logger.critical(f"operation_failure on try_next: {operation_failure}")
+                            raise operation_failure
                     # if we have processed any records, a None record means that we've caught up to the end of the
                     # stream - set keep_open to False so that the change stream is closed and the tap exits.
                     # if no records have been processed, a None record means that there has been no activity in the
