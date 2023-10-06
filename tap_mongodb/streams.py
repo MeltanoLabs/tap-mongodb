@@ -38,6 +38,8 @@ def recursive_replace_inf_in_dict(dct):
             for i, item in enumerate(value):
                 if isinstance(item, dict):
                     recursive_replace_inf_in_dict(item)
+                elif item in [-math.inf, math.inf]:
+                    value[i] = str(item)
         elif isinstance(value, dict):
             recursive_replace_inf_in_dict(value)
     return
