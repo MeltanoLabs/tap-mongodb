@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Generator, Iterable, Optional
-
+import math
 from bson.objectid import ObjectId
 from pendulum import DateTime
 from pymongo import ASCENDING
@@ -22,7 +22,7 @@ from singer_sdk.streams.core import (
     REPLICATION_INCREMENTAL,
     REPLICATION_LOG_BASED,
     Stream,
-    TypeConformanceLevel,
+    TypeConformanceLevel
 )
 
 from tap_mongodb.connector import MongoDBConnector
@@ -30,6 +30,17 @@ from tap_mongodb.types import IncrementalId
 
 DEFAULT_START_DATE: str = "1970-01-01"
 
+def recursive_replace_inf_in_dict(dct):
+    for key, value in dct.items():
+        if value in [-math.inf, math.inf]:
+            dct[key] = str(dct[key])
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                if isinstance(item, dict):
+                    recursive_replace_inf_in_dict(item)
+        elif isinstance(value, dict):
+            recursive_replace_inf_in_dict(value)
+    return
 
 def to_object_id(replication_key_value: str) -> ObjectId:
     """Converts an ISO-8601 date string into a BSON ObjectId."""
@@ -163,7 +174,7 @@ class MongoDBCollectionStream(Stream):
             record=record,
             schema=self.schema,
             level=self.TYPE_CONFORMANCE_LEVEL,
-            logger=self.logger,
+            logger=self.logger
         )
         for stream_map in self.stream_maps:
             mapped_record = stream_map.transform(record)
@@ -173,7 +184,7 @@ class MongoDBCollectionStream(Stream):
                     stream=stream_map.stream_alias,
                     record=mapped_record,
                     version=None,
-                    time_extracted=extracted_at,
+                    time_extracted=extracted_at
                 )
 
                 yield record_message
@@ -199,6 +210,9 @@ class MongoDBCollectionStream(Stream):
             for record in collection.find({"_id": {"$gt": start_date}}).sort([("_id", ASCENDING)]):
                 object_id: ObjectId = record["_id"]
                 incremental_id: IncrementalId = IncrementalId.from_object_id(object_id)
+
+                recursive_replace_inf_in_dict(record)
+
                 parsed_record = {
                     "replication_key": str(incremental_id),
                     "object_id": str(object_id),

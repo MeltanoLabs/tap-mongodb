@@ -99,7 +99,7 @@ class MongoDBConnector:
             The discovered catalog entries as a list.
         """
         result: List[Dict] = []
-        for collection in [i for i in self.database.list_collection_names(authorizedCollections=True, nameOnly=True) if i != 'system.profile']:
+        for collection in self.database.list_collection_names(authorizedCollections=True, nameOnly=True):
             try:
                 self.database[collection].find_one()
             except PyMongoError:
