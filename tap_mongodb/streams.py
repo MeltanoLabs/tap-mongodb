@@ -47,7 +47,6 @@ def to_object_id(replication_key_value: str) -> ObjectId:
     incremental_id: IncrementalId = IncrementalId.from_string(replication_key_value)
     return incremental_id.object_id
 
-
 class MongoDBCollectionStream(Stream):
     """Stream class for mongodb streams."""
 
@@ -97,6 +96,7 @@ class MongoDBCollectionStream(Stream):
     def primary_keys(self, new_value: list[str]) -> None:
         """Set primary keys for the stream."""
         self._primary_keys = new_value
+        return
 
     @property
     def is_sorted(self) -> bool:
@@ -106,6 +106,7 @@ class MongoDBCollectionStream(Stream):
         string, and these are alphanumerically sortable.
 
         When the tap is running in log-based mode, it is not sorted - the replication key value here is a hex string."""
+
         return self.replication_method == REPLICATION_INCREMENTAL
 
     def _increment_stream_state(self, latest_record: dict[str, Any], *, context: dict | None = None) -> None:
@@ -120,7 +121,9 @@ class MongoDBCollectionStream(Stream):
 
         Raises:
             ValueError: if configured replication method is unsupported, or if replication key is absent
+
         """
+
         # This also creates a state entry if one does not yet exist:
         state_dict = self.get_context_state(context)
 
@@ -193,9 +196,7 @@ class MongoDBCollectionStream(Stream):
         """Return a generator of record-type dictionary objects."""
         # pylint: disable=too-many-locals,too-many-branches,too-many-statements
         bookmark: str = self.get_starting_replication_key_value(context)
-
         should_add_metadata: bool = self.config.get("add_record_metadata", False)
-
         collection: Collection = self._connector.database[self._collection_name]
 
         if self.replication_method == REPLICATION_INCREMENTAL:
@@ -268,6 +269,7 @@ class MongoDBCollectionStream(Stream):
                 else:
                     self.logger.critical(f"operation_failure on collection.watch: {operation_failure}")
                     raise operation_failure
+
             except Exception as exception:
                 self.logger.critical(exception)
                 raise exception
