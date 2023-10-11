@@ -32,14 +32,14 @@ DEFAULT_START_DATE: str = "1970-01-01"
 
 def recursive_replace_inf_in_dict(dct):
     for key, value in dct.items():
-        if value in [-math.inf, math.inf]:
-            dct[key] = str(dct[key])
+        if value in [-math.inf, math.inf, math.nan]:
+            dct[key] = None
         elif isinstance(value, list):
             for i, item in enumerate(value):
                 if isinstance(item, dict):
                     recursive_replace_inf_in_dict(item)
-                elif item in [-math.inf, math.inf]:
-                    value[i] = str(item)
+                elif item in [-math.inf, math.inf, math.nan]:
+                    value[i] = None
         elif isinstance(value, dict):
             recursive_replace_inf_in_dict(value)
     return
