@@ -30,18 +30,18 @@ from tap_mongodb.types import IncrementalId
 
 DEFAULT_START_DATE: str = "1970-01-01"
 
-def recursive_replace_inf_in_dict(dct):
+def recursive_replace_empty_in_dict(dct):
     for key, value in dct.items():
         if value in [-math.inf, math.inf, math.nan]:
             dct[key] = None
         elif isinstance(value, list):
             for i, item in enumerate(value):
                 if isinstance(item, dict):
-                    recursive_replace_inf_in_dict(item)
+                    recursive_replace_empty_in_dict(item)
                 elif item in [-math.inf, math.inf, math.nan]:
                     value[i] = None
         elif isinstance(value, dict):
-            recursive_replace_inf_in_dict(value)
+            recursive_replace_empty_in_dict(value)
     return
 
 def to_object_id(replication_key_value: str) -> ObjectId:
@@ -214,7 +214,7 @@ class MongoDBCollectionStream(Stream):
                 object_id: ObjectId = record["_id"]
                 incremental_id: IncrementalId = IncrementalId.from_object_id(object_id)
 
-                recursive_replace_inf_in_dict(record)
+                recursive_replace_empty_in_dict(record)
 
                 parsed_record = {
                     "replication_key": str(incremental_id),
