@@ -2,7 +2,7 @@
 
 import sys
 from logging import Logger, getLogger
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, TypeAlias
 
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -15,6 +15,9 @@ if sys.version_info[:2] < (3, 8):
     from backports.cached_property import cached_property
 else:
     from functools import cached_property
+
+
+MongoVersion: TypeAlias = Tuple[int, int]
 
 
 class MongoDBConnector:
@@ -34,6 +37,7 @@ class MongoDBConnector:
         self._datetime_conversion: str = datetime_conversion.upper()
         self._prefix: Optional[str] = prefix
         self._logger: Logger = getLogger(__name__)
+        self._version: Optional[MongoVersion] = None
 
     @cached_property
     def mongo_client(self) -> MongoClient:
@@ -42,7 +46,9 @@ class MongoDBConnector:
             self._connection_string, datetime_conversion=self._datetime_conversion, **self._options
         )
         try:
-            client.server_info()
+            server_info: Dict[str, Any] = client.server_info()
+            version_array: List[int] = server_info["versionArray"]
+            self._version = (version_array[0], version_array[1])
         except Exception as exception:
             self._logger.exception("Could not connect to MongoDB")
             raise RuntimeError("Could not connect to MongoDB") from exception
@@ -52,6 +58,11 @@ class MongoDBConnector:
     def database(self) -> Database:
         """Provide a Database instance."""
         return self.mongo_client[self._db_name]
+
+    @property
+    def version(self) -> Optional[MongoVersion]:
+        """Returns the MongoVersion that is being used."""
+        return self._version
 
     def get_fully_qualified_name(
         self,
