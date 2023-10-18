@@ -2,7 +2,7 @@
 
 import sys
 from logging import Logger, getLogger
-from typing import Any, Dict, List, Optional, Tuple, TypeAlias
+from typing import Any, Dict, List, Optional, Tuple
 
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -17,7 +17,13 @@ else:
     from functools import cached_property
 
 
-MongoVersion: TypeAlias = Tuple[int, int]
+try:
+    from typing import TypeAlias  # pylint: disable=ungrouped-imports
+
+    MongoVersion: TypeAlias = Tuple[int, int]
+except ImportError:
+    TypeAlias = None
+    MongoVersion = Tuple[int, int]
 
 
 class MongoDBConnector:
