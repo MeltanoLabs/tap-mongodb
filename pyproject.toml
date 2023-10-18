@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tap-mongodb"
-version = "2.3.3"
+version = "2.4.0"
 description = "`tap-mongodb` is a Singer tap for MongoDB and AWS DocumentDB, built with the Meltano Singer SDK."
 readme = "README.md"
 authors = ["Matt Menzenski"]
