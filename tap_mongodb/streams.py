@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Any, Generator, Iterable, Optional
-import math
+
 from bson.objectid import ObjectId
 from pendulum import DateTime
 from pymongo import ASCENDING
@@ -18,19 +19,19 @@ from singer_sdk.helpers._catalog import pop_deselected_record_properties
 from singer_sdk.helpers._state import increment_state
 from singer_sdk.helpers._typing import conform_record_data_types
 from singer_sdk.helpers._util import utc_now
-from singer_sdk.streams.core import (
-    REPLICATION_INCREMENTAL,
-    REPLICATION_LOG_BASED,
-    Stream,
-    TypeConformanceLevel
-)
+from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED, Stream, TypeConformanceLevel
 
 from tap_mongodb.connector import MongoDBConnector
 from tap_mongodb.types import IncrementalId
 
 DEFAULT_START_DATE: str = "1970-01-01"
 
+
 def recursive_replace_empty_in_dict(dct):
+    """
+    Recursively replace empty values with None in a dictionary.
+    NaN, inf, and -inf are unable to be parsed by the json library, so these values will be replaced with None.
+    """
     for key, value in dct.items():
         if value in [-math.inf, math.inf, math.nan]:
             dct[key] = None
@@ -42,12 +43,15 @@ def recursive_replace_empty_in_dict(dct):
                     value[i] = None
         elif isinstance(value, dict):
             recursive_replace_empty_in_dict(value)
-    return
+    return dct
+
 
 def to_object_id(replication_key_value: str) -> ObjectId:
     """Converts an ISO-8601 date string into a BSON ObjectId."""
     incremental_id: IncrementalId = IncrementalId.from_string(replication_key_value)
+
     return incremental_id.object_id
+
 
 class MongoDBCollectionStream(Stream):
     """Stream class for mongodb streams."""
@@ -98,7 +102,7 @@ class MongoDBCollectionStream(Stream):
     def primary_keys(self, new_value: list[str]) -> None:
         """Set primary keys for the stream."""
         self._primary_keys = new_value
-        return
+        return self
 
     @property
     def is_sorted(self) -> bool:
@@ -158,6 +162,8 @@ class MongoDBCollectionStream(Stream):
             check_sorted=self.check_sorted,
         )
 
+        return self
+
     def _generate_record_messages(self, record: dict) -> Generator[singer.RecordMessage, None, None]:
         """Write out a RECORD message.
 
@@ -179,19 +185,16 @@ class MongoDBCollectionStream(Stream):
             record=record,
             schema=self.schema,
             level=self.TYPE_CONFORMANCE_LEVEL,
-            logger=self.logger
+            logger=self.logger,
         )
+
         for stream_map in self.stream_maps:
             mapped_record = stream_map.transform(record)
             # Emit record if not filtered
             if mapped_record is not None:
                 record_message = singer.RecordMessage(
-                    stream=stream_map.stream_alias,
-                    record=mapped_record,
-                    version=None,
-                    time_extracted=extracted_at
+                    stream=stream_map.stream_alias, record=mapped_record, version=None, time_extracted=extracted_at
                 )
-
                 yield record_message
 
     def get_records(self, context: dict | None) -> Iterable[dict]:
