@@ -238,7 +238,13 @@ class MongoDBCollectionStream(Stream):
             change_stream_options = {"full_document": "updateLookup"}
             if bookmark is not None and bookmark != DEFAULT_START_DATE:
                 self.logger.debug(f"using bookmark: {bookmark}")
-                change_stream_options["resume_after"] = {"_data": bookmark}
+                # if on mongo version 4.2 or above, use start_after instead of resume_after, as the former will
+                # gracefully open a new change stream if the resume token's event is not present in the oplog, while
+                # the latter will error in that scenario.
+                if self._connector.version >= (4, 2):
+                    change_stream_options["start_after"] = {"_data": bookmark}
+                else:
+                    change_stream_options["resume_after"] = {"_data": bookmark}
             operation_types_allowlist: set = set(self.config.get("operation_types"))
             has_seen_a_record: bool = False
             keep_open: bool = True
@@ -265,7 +271,8 @@ class MongoDBCollectionStream(Stream):
                             f"Unable to enable change streams on collection {collection.name}"
                         ) from operation_failure
                 elif (
-                    operation_failure.code == 286
+                    self._connector.version < (4, 2)
+                    and operation_failure.code == 286
                     and "as the resume point may no longer be in the oplog." in operation_failure.details["errmsg"]
                 ):
                     self.logger.warning("Unable to resume change stream from resume token. Resetting resume token.")
@@ -286,7 +293,8 @@ class MongoDBCollectionStream(Stream):
                         record = change_stream.try_next()
                     except OperationFailure as operation_failure:
                         if (
-                            operation_failure.code == 286
+                            self._connector.version < (4, 2)
+                            and operation_failure.code == 286
                             and "as the resume point may no longer be in the oplog."
                             in operation_failure.details["errmsg"]
                         ):
