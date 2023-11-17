@@ -1,0 +1,54 @@
+version: '3'
+services:
+  # replica set primary
+  tap-mongodb-test-db-1:
+    container_name: tap-mongodb-test-db-1
+    image: mongo:4.4
+    depends_on:
+      - tap-mongodb-test-db-2
+      - tap-mongodb-test-db-3
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - 27000:27000
+    volumes:
+      - ./mongodb-replicaset.key:/data/replica.key
+    restart: always
+    command: mongod --bind_ip all --replSet rs0 --oplogSize 1 --quiet --keyFile /data/replica.key --port 27000
+  # replica set secondary
+  tap-mongodb-test-db-2:
+    container_name: tap-mongodb-test-db-2
+    image: mongo:4.4
+    expose:
+      - 27000
+    volumes:
+      - ./mongodb-replicaset.key:/data/replica.key
+    restart: always
+    command: mongod --bind_ip all --replSet rs0 --oplogSize 1 --quiet --keyFile /data/replica.key --port 27000
+  # replica set arbiter
+  tap-mongodb-test-db-3:
+    container_name: tap-mongodb-test-db-3
+    image: mongo:4.4
+    expose:
+      - 27000
+    volumes:
+      - ./mongodb-replicaset.key:/data/replica.key
+    restart: always
+    command: mongod --bind_ip all --replSet rs0 --oplogSize 1 --quiet --keyFile /data/replica.key --port 27000
+  tap-mongodb-test-db-init:
+    container_name: tap-mongodb-test-db-init
+    image: mongo:4.4
+    depends_on:
+      - tap-mongodb-test-db-1
+      - tap-mongodb-test-db-2
+      - tap-mongodb-test-db-3
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - ./mongodb-init.sh:/scripts/mongodb_rs_init.sh
+    restart: on-failure
+    entrypoint:
+      - /bin/bash
+      - /scripts/mongodb_rs_init.sh

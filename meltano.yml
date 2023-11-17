@@ -115,6 +115,30 @@ plugins:
         '*':
           replication-key: replication_key
           replication-method: INCREMENTAL
+    - name: tap-test-service-backfill
+      inherit_from: tap-mongodb
+      config:
+        mongodb_connection_string: mongodb://admin:password@localhost:27000/
+        database: test_db
+        prefix: backfill_test_db
+      select:
+        - backfill_test_db_user.*
+      metadata:
+        '*':
+          replication-key: replication_key
+          replication-method: INCREMENTAL
+    - name: tap-test-service-streaming
+      inherit_from: tap-mongodb
+      config:
+        mongodb_connection_string: mongodb://admin:password@localhost:27000/
+        database: test_db
+        prefix: streaming_test_db
+      select:
+        - streaming_test_db_user.*
+      metadata:
+        '*':
+          replication-key: replication_key
+          replication-method: LOG_BASED
   loaders:
     - name: target-jsonl
       variant: andyh1203
