@@ -1,4 +1,4 @@
-"""Tests of the IncrementalId class."""
+"""Tests of tap-mongodb custom types."""
 
 from datetime import datetime
 

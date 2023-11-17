@@ -2,7 +2,7 @@
 
 import sys
 from logging import Logger, getLogger
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -10,20 +10,12 @@ from pymongo.errors import PyMongoError
 from singer_sdk._singerlib.catalog import CatalogEntry, MetadataMapping, Schema
 
 from tap_mongodb.schema import SCHEMA
+from tap_mongodb.types import MongoVersion
 
 if sys.version_info[:2] < (3, 8):
     from backports.cached_property import cached_property
 else:
     from functools import cached_property
-
-
-try:
-    from typing import TypeAlias  # pylint: disable=ungrouped-imports
-
-    MongoVersion: TypeAlias = Tuple[int, int]
-except ImportError:
-    TypeAlias = None
-    MongoVersion = Tuple[int, int]
 
 
 class MongoDBConnector:
@@ -43,7 +35,7 @@ class MongoDBConnector:
         self._datetime_conversion: str = datetime_conversion.upper()
         self._prefix: Optional[str] = prefix
         self._logger: Logger = getLogger(__name__)
-        self._version: Optional[MongoVersion] = None
+        self._version: MongoVersion
 
     @cached_property
     def mongo_client(self) -> MongoClient:
@@ -66,7 +58,7 @@ class MongoDBConnector:
         return self.mongo_client[self._db_name]
 
     @property
-    def version(self) -> Optional[MongoVersion]:
+    def version(self) -> MongoVersion:
         """Returns the MongoVersion that is being used."""
         return self._version
 
