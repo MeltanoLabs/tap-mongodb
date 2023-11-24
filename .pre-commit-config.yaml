@@ -11,8 +11,6 @@ repos:
       - id: end-of-file-fixer
         exclude: mongodb-replicaset.key
       - id: name-tests-test
-        args:
-          - --pytest
         exclude: tests/utilities/
       - id: no-commit-to-branch
         args:

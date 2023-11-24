@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
-from typing import Any, Generator, Iterable, Optional
+from typing import Any, Dict, Generator, Iterable, Optional
 
 from bson.objectid import ObjectId
 from pendulum import DateTime
@@ -23,11 +23,12 @@ from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BAS
 
 from tap_mongodb.connector import MongoDBConnector
 from tap_mongodb.types import IncrementalId
+from tap_mongodb.utils import to_object_id
 
 DEFAULT_START_DATE: str = "1970-01-01"
 
 
-def recursive_replace_empty_in_dict(dct):
+def recursive_replace_empty_in_dict(dct: Dict) -> Dict:
     """
     Recursively replace empty values with None in a dictionary.
     NaN, inf, and -inf are unable to be parsed by the json library, so these values will be replaced with None.
@@ -44,13 +45,6 @@ def recursive_replace_empty_in_dict(dct):
         elif isinstance(value, dict):
             recursive_replace_empty_in_dict(value)
     return dct
-
-
-def to_object_id(replication_key_value: str) -> ObjectId:
-    """Converts an ISO-8601 date string into a BSON ObjectId."""
-    incremental_id: IncrementalId = IncrementalId.from_string(replication_key_value)
-
-    return incremental_id.object_id
 
 
 class MongoDBCollectionStream(Stream):

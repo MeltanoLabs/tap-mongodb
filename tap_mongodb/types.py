@@ -1,11 +1,34 @@
 """Custom type definitions for tap-mongodb."""
 
 import re
+import sys
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 
 from bson.objectid import ObjectId
 from typing_extensions import Self
+
+try:
+    from typing import TypeAlias  # pylint: disable=ungrouped-imports
+
+    MongoVersion: TypeAlias = Tuple[int, int]
+except ImportError:
+    TypeAlias = None
+    MongoVersion = Tuple[int, int]
+
+
+if sys.version_info[:2] < (3, 11):
+    from strenum import StrEnum
+else:
+    from enum import StrEnum
+
+
+class ResumeStrategy(StrEnum):
+    """Enum type representing the strategy used to resume a change stream."""
+
+    RESUME_AFTER = "resume_after"
+    START_AFTER = "start_after"
+    START_AT_OPERATION_TIME = "start_at_operation_time"
 
 
 class IncrementalId:

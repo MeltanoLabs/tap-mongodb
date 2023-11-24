@@ -159,6 +159,32 @@ class TapMongoDB(Tap):
             required=False,
             description="Stream map config. See https://sdk.meltano.com/en/latest/stream_maps.html for documentation.",
         ),
+        th.Property(
+            "change_stream_resume_strategy",
+            th.StringType,
+            required=False,
+            default="resume_after",
+            description=(
+                "Only used when tap is run in log-based replication mode. This setting specifies how the tap creates a "
+                "new change stream on runs after the first. The default is `resume_after` (see "
+                "https://www.mongodb.com/docs/manual/changeStreams/#resumeafter-for-change-streams), which was added "
+                "in MongoDB 3.6 when the ChangeStream API was introduced. The `start_after` setting (see "
+                "https://www.mongodb.com/docs/manual/changeStreams/#startafter-for-change-streams) requires MongoDB "
+                "version 4.2 or greater. The `start_at_operation_time` setting (see "
+                "https://www.mongodb.com/docs/manual/changeStreams/#footnote-start-time) requires MongoDB version 4.0 "
+                "or greater. Note that `resume_after` and `start_after` will use a BSON resume token as the "
+                "replication key value, while `start_at_operation_time` will use an ISO 8601 datetime string. You may "
+                "thus switch back and forth between `resume_after` and `start_after` settings (provided the MongoDB"
+                "version is at least 4.2) freely, but you will need to do a full refresh and/or delete the stream "
+                "state before changing the setting to `start_at_operation_time`. If the value provided to this setting "
+                "is not compatible with the MongoDB version in use, this setting defaults to `resume_after`."
+            ),
+            allowed_values=[
+                "resume_after",
+                "start_after",
+                "start_at_operation_time",
+            ],
+        ),
     ).to_dict()
     config_jsonschema["properties"]["operation_types"]["items"]["enum"] = [
         "create",
