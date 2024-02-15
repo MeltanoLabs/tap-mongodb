@@ -1,6 +1,5 @@
 """Utility module containing some functions that don't fit well in other modules."""
 
-
 from bson.objectid import ObjectId
 
 from tap_mongodb.types import IncrementalId, MongoVersion, ResumeStrategy
@@ -19,10 +18,10 @@ def get_resume_strategy(mongo_version: MongoVersion, change_stream_resume_strate
     if mongo_version < (3, 6):
         raise ValueError("unsupported version of MongoDB")
     if (4, 0) <= mongo_version and change_stream_resume_strategy == "start_at_operation_time":
-        return ResumeStrategy.START_AT_OPERATION_TIME
+        return ResumeStrategy.START_AT_OPERATION_TIME  # type: ignore[return-value]
     if (4, 2) <= mongo_version and change_stream_resume_strategy == "start_after":
-        return ResumeStrategy.START_AFTER
-    return ResumeStrategy.RESUME_AFTER
+        return ResumeStrategy.START_AFTER  # type: ignore[return-value]
+    return ResumeStrategy.RESUME_AFTER  # type: ignore[return-value]
 
 
 def to_object_id(replication_key_value: str) -> ObjectId:

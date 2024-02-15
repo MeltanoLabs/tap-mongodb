@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
-from typing import Any, Dict, Generator, Iterable, Optional
+from typing import Any, Dict, Generator, Iterable, Optional, Union
 
 from bson.objectid import ObjectId
 from pendulum import DateTime
@@ -96,7 +96,6 @@ class MongoDBCollectionStream(Stream):
     def primary_keys(self, new_value: list[str]) -> None:
         """Set primary keys for the stream."""
         self._primary_keys = new_value
-        return self
 
     @property
     def is_sorted(self) -> bool:
@@ -155,8 +154,6 @@ class MongoDBCollectionStream(Stream):
             is_sorted=treat_as_sorted,
             check_sorted=self.check_sorted,
         )
-
-        return self
 
     def _generate_record_messages(self, record: dict) -> Generator[singer.RecordMessage, None, None]:
         """Write out a RECORD message.
@@ -229,7 +226,7 @@ class MongoDBCollectionStream(Stream):
     ) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects when running in log-based replication mode."""
         # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-        change_stream_options = {"full_document": "updateLookup"}
+        change_stream_options: Dict[str, Union[str, Dict[str, str]]] = {"full_document": "updateLookup"}
         mongo_version: MongoVersion = self._connector.version
         change_stream_resume_strategy: str = self.config.get("change_stream_resume_strategy", "resume_after")
         resume_strategy: ResumeStrategy = get_resume_strategy(mongo_version, change_stream_resume_strategy)
@@ -335,7 +332,7 @@ class MongoDBCollectionStream(Stream):
                     # fullDocument key is not present on delete events - if it is missing, fall back to documentKey
                     # instead. If that is missing, pass None/null to avoid raising an error.
                     document = record.get("fullDocument", record.get("documentKey", None))
-                    object_id: Optional[ObjectId] = document["_id"] if "_id" in document else None
+                    object_id: Optional[ObjectId] = document["_id"] if document and "_id" in document else None
                     parsed_record = {
                         "replication_key": record["_id"]["_data"],
                         "object_id": str(object_id) if object_id is not None else None,
