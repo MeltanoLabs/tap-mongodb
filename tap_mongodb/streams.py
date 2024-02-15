@@ -170,7 +170,7 @@ class MongoDBCollectionStream(Stream):
             Record message objects.
         """
         extracted_at: DateTime = record.pop("_sdc_extracted_at", utc_now())
-        pop_deselected_record_properties(record, self.schema, self.mask, self.logger)
+        pop_deselected_record_properties(record, self.schema, self.mask)
         record = conform_record_data_types(
             stream_name=self.name,
             record=record,
@@ -243,6 +243,7 @@ class MongoDBCollectionStream(Stream):
 
         try:
             change_stream = collection.watch(**change_stream_options)
+            self.logger.info("Opened change stream")
         except OperationFailure as operation_failure:
             if (
                 operation_failure.code == 136
@@ -273,84 +274,88 @@ class MongoDBCollectionStream(Stream):
             else:
                 self.logger.critical(f"operation_failure on collection.watch: {operation_failure}")
                 raise operation_failure
-
         except Exception as exception:
             self.logger.critical(exception)
             raise exception
 
-        with change_stream:
-            while change_stream.alive and keep_open:
-                record: Optional[_DocumentType]
-                try:
-                    record = change_stream.try_next()
-                except OperationFailure as operation_failure:
-                    if (
-                        resume_strategy == ResumeStrategy.RESUME_AFTER
-                        and operation_failure.code == 286
-                        and "as the resume point may no longer be in the oplog." in operation_failure.details["errmsg"]
-                    ):
-                        self.logger.warning(f"operation_failure on try_next: {operation_failure}")
-                        record = None
-                    else:
-                        self.logger.critical(f"operation_failure on try_next: {operation_failure}")
-                        raise operation_failure
-                # if we have processed any records, a None record means that we've caught up to the end of the
-                # stream - set keep_open to False so that the change stream is closed and the tap exits.
-                # if no records have been processed, a None record means that there has been no activity in the
-                # collection since the change stream was opened. MongoDB and DocumentDB have different behavior here
-                # (MongoDB change streams have a valid/resumable resume_token immediately, while DocumentDB change
-                # streams have a None resume_token until there has been an event published to the change stream).
-                # The intent of the following code is the following:
-                #  - If a change stream is opened and there are no records, hold it open until a record appears,
-                #    then yield that record (whose _id is set to the change stream's resume token, so that the
-                #    change stream can be resumed from this point by a later running of the tap).
-                #  - If a change stream is opened and there is at least one record, yield all records
-                if record is None and not has_seen_a_record and change_stream.resume_token is not None:
-                    # if we're in this block, we're in MongoDB specifically - DocumentDB will have a None resume
-                    # token here. If we take no action, the tap will remain open and idle until a message appears
-                    # in the change stream, then it will yield that record and close. That's not ideal because it
-                    # doesn't need to wait around for activity. It can just yield a "dummy" record with the resume
-                    # token from the change stream, exit immediately, and then pick up processing the change stream
-                    # from this point the next time the tap is run. So that's what we do.
-                    yield {
-                        "replication_key": change_stream.resume_token["_data"],
-                        "object_id": None,
-                        "document": None,
-                        "operation_type": None,
-                        "cluster_time": None,
-                        "namespace": None,
-                    }
-                    has_seen_a_record = True
+        while change_stream.alive and keep_open:
+            record: Optional[_DocumentType]
+            try:
+                record = change_stream.try_next()
+            except OperationFailure as operation_failure:
+                if (
+                    resume_strategy == ResumeStrategy.RESUME_AFTER
+                    and operation_failure.code == 286
+                    and "as the resume point may no longer be in the oplog." in operation_failure.details["errmsg"]
+                ):
+                    self.logger.warning("Unable to resume change stream from resume token. Resetting resume token.")
+                    change_stream_options.pop("resume_after", None)
+                    change_stream = collection.watch(**change_stream_options)
+                    record = None
+                else:
+                    self.logger.critical(f"operation_failure on try_next: {operation_failure}")
+                    raise operation_failure
+            # if we have processed any records, a None record means that we've caught up to the end of the
+            # stream - set keep_open to False so that the change stream is closed and the tap exits.
+            # if no records have been processed, a None record means that there has been no activity in the
+            # collection since the change stream was opened. MongoDB and DocumentDB have different behavior here
+            # (MongoDB change streams have a valid/resumable resume_token immediately, while DocumentDB change
+            # streams have a None resume_token until there has been an event published to the change stream).
+            # The intent of the following code is the following:
+            #  - If a change stream is opened and there are no records, hold it open until a record appears,
+            #    then yield that record (whose _id is set to the change stream's resume token, so that the
+            #    change stream can be resumed from this point by a later running of the tap).
+            #  - If a change stream is opened and there is at least one record, yield all records
+            if record is None and not has_seen_a_record and change_stream.resume_token is not None:
+                # if we're in this block, we're in MongoDB specifically - DocumentDB will have a None resume
+                # token here. If we take no action, the tap will remain open and idle until a message appears
+                # in the change stream, then it will yield that record and close. That's not ideal because it
+                # doesn't need to wait around for activity. It can just yield a "dummy" record with the resume
+                # token from the change stream, exit immediately, and then pick up processing the change stream
+                # from this point the next time the tap is run. So that's what we do.
+                yield {
+                    "replication_key": change_stream.resume_token["_data"],
+                    "object_id": None,
+                    "document": None,
+                    "operation_type": None,
+                    "cluster_time": None,
+                    "namespace": None,
+                }
+                has_seen_a_record = True
 
-                if record is None and has_seen_a_record:
-                    keep_open = False
-                if record is not None:
-                    operation_type = record["operationType"]
-                    if operation_type not in operation_types_allowlist:
-                        continue
-                    cluster_time: datetime = record["clusterTime"].as_datetime()
-                    # fullDocument key is not present on delete events - if it is missing, fall back to documentKey
-                    # instead. If that is missing, pass None/null to avoid raising an error.
-                    document = record.get("fullDocument", record.get("documentKey", None))
-                    object_id: Optional[ObjectId] = document["_id"] if document and "_id" in document else None
-                    parsed_record = {
-                        "replication_key": record["_id"]["_data"],
-                        "object_id": str(object_id) if object_id is not None else None,
-                        "document": document,
-                        "operation_type": operation_type,
-                        "cluster_time": cluster_time.isoformat(),
-                        "namespace": {
-                            "database": record["ns"]["db"],
-                            "collection": record["ns"]["coll"],
-                        },
-                    }
-                    if should_add_metadata:
-                        parsed_record["_sdc_extracted_at"] = cluster_time
-                        parsed_record["_sdc_batched_at"] = datetime.utcnow()
-                        if operation_type == "delete":
-                            parsed_record["_sdc_deleted_at"] = cluster_time
-                    yield parsed_record
-                    has_seen_a_record = True
+            if record is None and has_seen_a_record:
+                self.logger.info(
+                    "Reached the end of the change stream after consuming at least one record, closing it."
+                )
+                keep_open = False
+            if record is not None:
+                operation_type = record["operationType"]
+                if operation_type not in operation_types_allowlist:
+                    self.logger.debug(f"Skipping record of operationType {operation_type} which is not in allowlist")
+                    continue
+                cluster_time: datetime = record["clusterTime"].as_datetime()
+                # fullDocument key is not present on delete events - if it is missing, fall back to documentKey
+                # instead. If that is missing, pass None/null to avoid raising an error.
+                document = record.get("fullDocument", record.get("documentKey", None))
+                object_id: Optional[ObjectId] = document["_id"] if document and "_id" in document else None
+                parsed_record = {
+                    "replication_key": record["_id"]["_data"],
+                    "object_id": str(object_id) if object_id is not None else None,
+                    "document": document,
+                    "operation_type": operation_type,
+                    "cluster_time": cluster_time.isoformat(),
+                    "namespace": {
+                        "database": record["ns"]["db"],
+                        "collection": record["ns"]["coll"],
+                    },
+                }
+                if should_add_metadata:
+                    parsed_record["_sdc_extracted_at"] = cluster_time
+                    parsed_record["_sdc_batched_at"] = datetime.utcnow()
+                    if operation_type == "delete":
+                        parsed_record["_sdc_deleted_at"] = cluster_time
+                yield parsed_record
+                has_seen_a_record = True
 
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""

@@ -67,6 +67,10 @@ quote_basic_values = false
 quote_keys_and_basic_values = false
 
 [tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
 select = [
     "E",
     "F",
@@ -78,10 +82,8 @@ exclude = [
     ".secrets",
     "output",
 ]
-line-length = 120
-target-version = "py311"
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-third-party = [
     "pymongo",
     "singer_sdk",
