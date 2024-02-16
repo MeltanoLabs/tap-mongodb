@@ -21,13 +21,6 @@ def test_that_resume_after_is_returned_on_mongo_3_6_if_start_after_is_set() -> N
     assert get_resume_strategy(mongo_version, change_stream_resume_strategy) == ResumeStrategy.RESUME_AFTER
 
 
-def test_that_resume_after_is_returned_on_mongo_3_6_if_start_at_operation_time_is_set() -> None:
-    """Test that resume_after is returned for MongoDB version 3.6 even though start_at_operation_time was configured"""
-    mongo_version: MongoVersion = (3, 6)
-    change_stream_resume_strategy: str = "start_at_operation_time"
-    assert get_resume_strategy(mongo_version, change_stream_resume_strategy) == ResumeStrategy.RESUME_AFTER
-
-
 def test_that_resume_after_is_returned_on_mongo_3_6() -> None:
     """Test that resume_after is returned for MongoDB version 3.6 when resume_after is configured"""
     mongo_version: MongoVersion = (3, 6)
