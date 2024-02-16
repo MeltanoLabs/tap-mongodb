@@ -31,7 +31,6 @@ mypy = "^1.0.0"
 isort = "^5.11.5"
 singer-sdk = { version = "^0.35.0", extras = ["testing"] }
 pylint = "^3.0.0a6"
-loguru = "^0.7.2"
 
 [tool.poetry.extras]
 s3 = ["fs-s3fs"]
