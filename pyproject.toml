@@ -50,7 +50,6 @@ target-version = ['py311']
 [tool.poetry.scripts]
 # CLI declaration
 tap-mongodb = 'tap_mongodb.tap:TapMongoDB.cli'
-seed = "tests.utilities.seed:main"
 
 [tool.yamlfix]
 comments_min_spaces_from_content = 2
