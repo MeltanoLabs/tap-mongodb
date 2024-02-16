@@ -90,6 +90,18 @@ plugins:
             - insert
             - replace
             - update
+        - name: change_stream_resume_strategy
+          kind: string
+          description: |
+            Only used when tap is run in log-based replication mode. This setting specifies how the tap creates a
+            new change stream on runs after the first. The default is `resume_after` (see
+            https://www.mongodb.com/docs/manual/changeStreams/#resumeafter-for-change-streams), which was added
+            in MongoDB 3.6 when the ChangeStream API was introduced. The `start_after` setting (see
+            https://www.mongodb.com/docs/manual/changeStreams/#startafter-for-change-streams) requires MongoDB
+            version 4.2 or greater. You may switch back and forth between `resume_after` and `start_after`
+            settings (provided the MongoDB version is at least 4.2) freely. If the value provided to this setting
+            is not compatible with the MongoDB version in use, this setting defaults to `resume_after`.
+          value: resume_after
         - name: stream_maps
           kind: object
           description: |
@@ -115,30 +127,6 @@ plugins:
         '*':
           replication-key: replication_key
           replication-method: INCREMENTAL
-    - name: tap-test-service-backfill
-      inherit_from: tap-mongodb
-      config:
-        mongodb_connection_string: mongodb://admin:password@localhost:27000/
-        database: test_db
-        prefix: backfill_test_db
-      select:
-        - backfill_test_db_user.*
-      metadata:
-        '*':
-          replication-key: replication_key
-          replication-method: INCREMENTAL
-    - name: tap-test-service-streaming
-      inherit_from: tap-mongodb
-      config:
-        mongodb_connection_string: mongodb://admin:password@localhost:27000/
-        database: test_db
-        prefix: streaming_test_db
-      select:
-        - streaming_test_db_user.*
-      metadata:
-        '*':
-          replication-key: replication_key
-          replication-method: LOG_BASED
   loaders:
     - name: target-jsonl
       variant: andyh1203

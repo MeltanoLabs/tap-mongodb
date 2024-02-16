@@ -29,7 +29,6 @@ class ResumeStrategy(StrEnum):
 
     RESUME_AFTER = "resume_after"
     START_AFTER = "start_after"
-    START_AT_OPERATION_TIME = "start_at_operation_time"
 
 
 class IncrementalId:

@@ -11,14 +11,11 @@ def get_resume_strategy(mongo_version: MongoVersion, change_stream_resume_strate
     if change_stream_resume_strategy not in {
         "resume_after",
         "start_after",
-        "start_at_operation_time",
     }:
         raise ValueError("unsupported change_stream_resume_strategy setting")
     # validate that the mongodb version is at least 3.6
     if mongo_version < (3, 6):
         raise ValueError("unsupported version of MongoDB")
-    if (4, 0) <= mongo_version and change_stream_resume_strategy == "start_at_operation_time":
-        return ResumeStrategy.START_AT_OPERATION_TIME  # type: ignore[return-value]
     if (4, 2) <= mongo_version and change_stream_resume_strategy == "start_after":
         return ResumeStrategy.START_AFTER  # type: ignore[return-value]
     return ResumeStrategy.RESUME_AFTER  # type: ignore[return-value]
