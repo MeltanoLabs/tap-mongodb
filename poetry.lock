@@ -60,18 +60,6 @@ files = [
 ]
 
 [[package]]
-name = "backports-cached-property"
-version = "1.0.2"
-description = "cached_property() - computed once per instance, cached as attribute"
-category = "main"
-optional = false
-python-versions = ">=3.6.0"
-files = [
-    {file = "backports.cached-property-1.0.2.tar.gz", hash = "sha256:9306f9eed6ec55fd156ace6bc1094e2c86fae5fb2bf07b6a9c00745c656e75dd"},
-    {file = "backports.cached_property-1.0.2-py3-none-any.whl", hash = "sha256:baeb28e1cd619a3c9ab8941431fe34e8490861fb998c6c4590693d50171db0cc"},
-]
-
-[[package]]
 name = "backports-datetime-fromisoformat"
 version = "2.0.1"
 description = "Backport of Python 3.11's datetime.fromisoformat"
@@ -2033,4 +2021,4 @@ s3 = ["fs-s3fs"]
 [metadata]
 lock-version = "2.0"
 python-versions = "<3.12,>=3.8"
-content-hash = "68c17388b62eb49f534a6f6c0571756b674e5c8be8a8ecb655a79986d168e52e"
+content-hash = "12bb28c9df6d137fadb8db0cc22f15798064502fb50d9f2416ae9e5c3660412d"
