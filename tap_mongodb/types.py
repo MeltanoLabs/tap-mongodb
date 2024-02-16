@@ -84,7 +84,7 @@ class IncrementalId:
     @classmethod
     def from_string(cls, id_string: str) -> Self:
         """Create an IncrementalId instance from a string."""
-        matched: Optional[re.Match[str]] = re.match(IncrementalId.PATTERN, id_string)
+        matched: Optional[re.Match] = re.match(IncrementalId.PATTERN, id_string)
         if not matched:
             raise ValueError("Invalid IncrementalId string")
         datetime_part = datetime.fromisoformat(matched["dt"])
