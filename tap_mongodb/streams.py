@@ -212,10 +212,12 @@ class MongoDBCollectionStream(Stream):
                 "document": record,
                 "operation_type": None,
                 "cluster_time": None,
+                "update_description": None,
                 "namespace": {
                     "database": collection.database.name,
                     "collection": collection.name,
                 },
+                "to": None,
             }
             if should_add_metadata:
                 parsed_record["_sdc_batched_at"] = datetime.utcnow()
@@ -317,9 +319,11 @@ class MongoDBCollectionStream(Stream):
                     "replication_key": change_stream.resume_token["_data"],
                     "object_id": None,
                     "document": None,
+                    "update_description": None,
                     "operation_type": None,
                     "cluster_time": None,
                     "namespace": None,
+                    "to": None,
                 }
                 has_seen_a_record = True
 
@@ -338,16 +342,27 @@ class MongoDBCollectionStream(Stream):
                 # instead. If that is missing, pass None/null to avoid raising an error.
                 document = record.get("fullDocument", record.get("documentKey", None))
                 object_id: Optional[ObjectId] = document["_id"] if document and "_id" in document else None
+                update_description: Optional[Dict] = None
+                if "updateDescription" in record:
+                    update_description = record.get("updateDescription")
+                to_obj: Optional[Dict] = None
+                if "to" in record:
+                    to_obj = {
+                        "database": record["to"]["db"],
+                        "collection": record["to"]["coll"],
+                    }
                 parsed_record = {
                     "replication_key": record["_id"]["_data"],
                     "object_id": str(object_id) if object_id is not None else None,
                     "document": document,
+                    "update_description": update_description,
                     "operation_type": operation_type,
                     "cluster_time": cluster_time.isoformat(),
                     "namespace": {
                         "database": record["ns"]["db"],
                         "collection": record["ns"]["coll"],
                     },
+                    "to": to_obj,
                 }
                 if should_add_metadata:
                     parsed_record["_sdc_extracted_at"] = cluster_time
