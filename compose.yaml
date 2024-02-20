@@ -1,65 +1,16 @@
-version: '3'
+version: '3.9'
 services:
-  mongodb-test-1:
-    container_name: mongodb-test-1
-    image: mongo:4.4
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password
+  mongo-rs:
+    image: mongo:${MONGODB_VERSION:-4.4}
+    container_name: mongo-rs
+    restart: always
+    volumes:
+      - ./rs-initiate.js:/docker-entrypoint-initdb.d/rs-initiate.js
     ports:
       - 27117:27117
-    volumes:
-      - ./mongodb-replicaset.key:/data/replica.key
-    restart: always
-    command: mongod --bind_ip all --replSet rs0 --port 27117 --oplogSize 1 --quiet --keyFile /data/replica.key
-    networks:
-      - mongodb_network
-  mongodb-test-2:
-    container_name: mongodb-test-2
-    image: mongo:4.4
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password
-    ports:
-      - 27118:27118
-    volumes:
-      - ./mongodb-replicaset.key:/data/replica.key
-    restart: always
-    command: mongod --bind_ip all --replSet rs0 --port 27118 --oplogSize 1 --quiet --keyFile /data/replica.key
-    networks:
-      - mongodb_network
-  mongodb-test-3:
-    container_name: mongodb-test-3
-    image: mongo:4.4
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password
-    ports:
-      - 27119:27119
-    volumes:
-      - ./mongodb-replicaset.key:/data/replica.key
-    restart: always
-    command: mongod --bind_ip all --replSet rs0 --port 27119 --oplogSize 1 --quiet --keyFile /data/replica.key
-    networks:
-      - mongodb_network
-  mongodb-test-init:
-    container_name: mongodb-test-init
-    image: mongo:4.4
-    depends_on:
-      - mongodb-test-1
-      - mongodb-test-2
-      - mongodb-test-3
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: password
-    volumes:
-      - ./mongodb-init.sh:/scripts/mongodb_rs_init.sh
-    restart: on-failure
-    entrypoint:
-      - /bin/bash
-      - /scripts/mongodb_rs_init.sh
-    networks:
-      - mongodb_network
-networks:
-  mongodb_network:
-    driver: bridge
+    command:
+      - --replSet
+      - rs0
+      - --bind_ip_all
+      - --port
+      - '27117'
