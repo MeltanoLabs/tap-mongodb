@@ -379,10 +379,10 @@ class MongoDBCollectionStream(Stream):
         collection: Collection = self._connector.database[self._collection_name]
 
         if self.replication_method == REPLICATION_INCREMENTAL:
-            return self._get_records_incremental(bookmark, should_add_metadata, collection)
+            yield from self._get_records_incremental(bookmark, should_add_metadata, collection)
 
-        if self.replication_method == REPLICATION_LOG_BASED:
-            return self._get_records_log_based(bookmark, should_add_metadata, collection)
+        elif self.replication_method == REPLICATION_LOG_BASED:
+            yield from self._get_records_log_based(bookmark, should_add_metadata, collection)
 
         msg = (
             f"Unrecognized replication method {self.replication_method}. Only {REPLICATION_INCREMENTAL} and"
