@@ -33,9 +33,9 @@ def recursive_replace_empty_in_dict(dct):
     NaN, inf, and -inf are unable to be parsed by the json library, so these values will be replaced with None.
     """
     for key, value in dct.items():
-        if value in [-math.inf, math.inf, math.nan]:
+        if isinstance(value, float) and (math.isinf(value) or math.isnan(value)):
             dct[key] = None
-        elif str(value).lower() in ["none", "nan", "", "empty", " ", "null"]:
+        elif isinstance(value, str) and str(value).lower() in ["none", "nan", "", "empty", " ", "null"]:
             dct[key] = None
         elif isinstance(value, list):
             for i, item in enumerate(value):
