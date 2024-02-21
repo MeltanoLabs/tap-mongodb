@@ -35,7 +35,7 @@ def recursive_replace_empty_in_dict(dct):
     for key, value in dct.items():
         if value in [-math.inf, math.inf, math.nan]:
             dct[key] = None
-        elif lower(str(value)) in ['none', 'nan', '', 'empty', ' ', 'null']:
+        elif str(value).lower() in ['none', 'nan', '', 'empty', ' ', 'null']:
             dct[key] = None
         elif isinstance(value, list):
             for i, item in enumerate(value):
