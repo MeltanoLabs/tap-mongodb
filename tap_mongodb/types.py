@@ -1,11 +1,34 @@
 """Custom type definitions for tap-mongodb."""
 
 import re
+import sys
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 
 from bson.objectid import ObjectId
-from typing_extensions import Self
+
+if sys.version_info < (3, 10):
+    from typing_extensions import TypeAlias
+
+    MongoVersion = Tuple[int, int]
+else:
+    from typing import TypeAlias  # pylint: disable=ungrouped-imports
+
+    MongoVersion: TypeAlias = Tuple[int, int]
+
+if sys.version_info < (3, 11):
+    from strenum import StrEnum
+    from typing_extensions import Self
+else:
+    from enum import StrEnum
+    from typing import Self
+
+
+class ResumeStrategy(StrEnum):
+    """Enum type representing the strategy used to resume a change stream."""
+
+    RESUME_AFTER = "resume_after"
+    START_AFTER = "start_after"
 
 
 class IncrementalId:
@@ -52,7 +75,7 @@ class IncrementalId:
             return ObjectId.from_datetime(self._datetime)
         return ObjectId(self._object_id)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the IncrementalId."""
         datetime_part: str = self._datetime.isoformat() if self._datetime else ""
         object_id_part: str = f"{self._separator}{self._object_id}" if self._object_id else ""
@@ -61,12 +84,12 @@ class IncrementalId:
     @classmethod
     def from_string(cls, id_string: str) -> Self:
         """Create an IncrementalId instance from a string."""
-        matched: re.Match = re.match(IncrementalId.PATTERN, id_string)
+        matched: Optional[re.Match] = re.match(IncrementalId.PATTERN, id_string)
         if not matched:
             raise ValueError("Invalid IncrementalId string")
         datetime_part = datetime.fromisoformat(matched["dt"])
         object_id_part = matched["oid"] if matched["oid"] else None
-        return IncrementalId(datetime_part, object_id_part)
+        return IncrementalId(datetime_part, object_id_part)  # type: ignore[return-value]
 
     @classmethod
     def from_object_id(cls, object_id: ObjectId) -> Self:
@@ -75,4 +98,4 @@ class IncrementalId:
             raise ValueError("ObjectId argument cannot be None")
         datetime_part = object_id.generation_time
         object_id_part = str(object_id)
-        return IncrementalId(datetime_part, object_id_part)
+        return IncrementalId(datetime_part, object_id_part)  # type: ignore[return-value]
