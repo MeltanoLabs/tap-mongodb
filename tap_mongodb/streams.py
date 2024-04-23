@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime
-from typing import Any, Dict, Generator, Iterable, Optional, Union
+from datetime import datetime, timezone
+from typing import Any, Dict, Generator, Iterable, List, Optional, Union
 
 from bson.objectid import ObjectId
 from loguru import logger
@@ -37,13 +37,13 @@ def recursive_replace_empty_in_dict(dct: Dict) -> Dict:
     for key, value in dct.items():
         if value in [-math.inf, math.inf, math.nan]:
             dct[key] = None
-        elif isinstance(value, list):
+        elif isinstance(value, List):
             for i, item in enumerate(value):
-                if isinstance(item, dict):
+                if isinstance(item, Dict):
                     recursive_replace_empty_in_dict(item)
                 elif item in [-math.inf, math.inf, math.nan]:
                     value[i] = None
-        elif isinstance(value, dict):
+        elif isinstance(value, Dict):
             recursive_replace_empty_in_dict(value)
     return dct
 
@@ -64,7 +64,7 @@ class MongoDBCollectionStream(Stream):
     def __init__(
         self,
         tap: TapBaseClass,
-        catalog_entry: dict,
+        catalog_entry: Dict,
         connector: MongoDBConnector,
     ) -> None:
         """Initialize the database stream.
@@ -86,7 +86,7 @@ class MongoDBCollectionStream(Stream):
         )
 
     @property
-    def primary_keys(self) -> Optional[list[str]]:
+    def primary_keys(self) -> Optional[List[str]]:
         """If running in log-based replication mode, use the Change Event ID as the primary key. If running instead in
         incremental replication mode, use the document's ObjectId."""
         if self.replication_method == REPLICATION_LOG_BASED:
@@ -94,7 +94,7 @@ class MongoDBCollectionStream(Stream):
         return ["object_id"]
 
     @primary_keys.setter
-    def primary_keys(self, new_value: list[str]) -> None:
+    def primary_keys(self, new_value: List[str]) -> None:
         """Set primary keys for the stream."""
         self._primary_keys = new_value
 
@@ -109,7 +109,7 @@ class MongoDBCollectionStream(Stream):
 
         return self.replication_method == REPLICATION_INCREMENTAL
 
-    def _increment_stream_state(self, latest_record: dict[str, Any], *, context: dict | None = None) -> None:
+    def _increment_stream_state(self, latest_record: Dict[str, Any], *, context: Optional[Dict] = None) -> None:
         """Update state of stream or partition with data from the provided record.
 
         Raises `InvalidStreamSortException` is `self.is_sorted = True` and unsorted data
@@ -157,7 +157,7 @@ class MongoDBCollectionStream(Stream):
             check_sorted=self.check_sorted,
         )
 
-    def _generate_record_messages(self, record: dict) -> Generator[singer.RecordMessage, None, None]:
+    def _generate_record_messages(self, record: Dict) -> Generator[singer.RecordMessage, None, None]:
         """Write out a RECORD message.
 
         We are overriding the default implementation of this (private) method because the default behavior is to set
@@ -192,7 +192,7 @@ class MongoDBCollectionStream(Stream):
 
     def _get_records_incremental(
         self, bookmark: str, should_add_metadata: bool, collection: Collection
-    ) -> Iterable[dict]:
+    ) -> Iterable[Dict]:
         """Return a generator of record-type dictionary objects when running in incremental replication mode."""
         if bookmark:
             logger.info(f"using existing bookmark: {bookmark}")
@@ -222,12 +222,12 @@ class MongoDBCollectionStream(Stream):
                 "to": None,
             }
             if should_add_metadata:
-                parsed_record["_sdc_batched_at"] = datetime.utcnow()
+                parsed_record["_sdc_batched_at"] = datetime.now(timezone.utc)
             yield parsed_record
 
     def _get_records_log_based(
         self, bookmark: str, should_add_metadata: bool, collection: Collection
-    ) -> Iterable[dict]:
+    ) -> Iterable[Dict]:
         """Return a generator of record-type dictionary objects when running in log-based replication mode."""
         # pylint: disable=too-many-locals,too-many-branches,too-many-statements
         change_stream_options: Dict[str, Union[str, Dict[str, str]]] = {"full_document": "updateLookup"}
@@ -336,16 +336,24 @@ class MongoDBCollectionStream(Stream):
             if record is not None:
                 operation_type = record["operationType"]
                 if operation_type not in operation_types_allowlist:
-                    logger.info(f"Skipping record of operationType {operation_type} which is not in allowlist")
+                    logger.warning(f"Skipping record of operationType {operation_type} which is not in allowlist")
                     continue
                 cluster_time: datetime = record["clusterTime"].as_datetime()
                 # fullDocument key is not present on delete events - if it is missing, fall back to documentKey
                 # instead. If that is missing, pass None/null to avoid raising an error.
-                document = record.get("fullDocument", record.get("documentKey", None))
+                # document: Dict = record.get("fullDocument", record.get("documentKey", None))
+                document: Optional[Dict]
+                if "fullDocument" in record:
+                    document = record["fullDocument"]
+                elif "documentKey" in record:
+                    document = record["documentKey"]
+                else:
+                    document = None
+
                 object_id: Optional[ObjectId] = document["_id"] if document and "_id" in document else None
                 update_description: Optional[Dict] = None
                 if "updateDescription" in record:
-                    update_description = record.get("updateDescription")
+                    update_description = record["updateDescription"]
                 to_obj: Optional[Dict] = None
                 if "to" in record:
                     to_obj = {
@@ -367,13 +375,13 @@ class MongoDBCollectionStream(Stream):
                 }
                 if should_add_metadata:
                     parsed_record["_sdc_extracted_at"] = cluster_time
-                    parsed_record["_sdc_batched_at"] = datetime.utcnow()
+                    parsed_record["_sdc_batched_at"] = datetime.now(timezone.utc)
                     if operation_type == "delete":
                         parsed_record["_sdc_deleted_at"] = cluster_time
                 yield parsed_record
                 has_seen_a_record = True
 
-    def get_records(self, context: dict | None) -> Iterable[dict]:
+    def get_records(self, context: Dict | None) -> Iterable[Dict]:
         """Return a generator of record-type dictionary objects."""
         bookmark: str = self.get_starting_replication_key_value(context)
         should_add_metadata: bool = self.config.get("add_record_metadata", False)
