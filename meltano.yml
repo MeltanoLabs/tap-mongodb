@@ -127,6 +127,20 @@ plugins:
         '*':
           replication-key: replication_key
           replication-method: INCREMENTAL
+    - name: tap-braintree-payment-service-streaming
+      inherit_from: tap-mongodb
+      config:
+        add_record_metadata: true
+        allow_modify_change_streams: true
+        datetime_conversion: datetime_clamp
+        database: braintree_payment_service
+        prefix: live_braintree_payment_service
+      select:
+        - live_braintree_payment_service_paymenttransactionv3.*
+      metadata:
+        '*':
+          replication-key: replication_key
+          replication-method: LOG_BASED
   loaders:
     - name: target-jsonl
       variant: andyh1203
