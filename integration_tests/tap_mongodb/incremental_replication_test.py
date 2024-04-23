@@ -8,8 +8,8 @@ from bson.objectid import ObjectId
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
-from test_core import MongoDBTestRunner
 
+from integration_tests.test_core import MongoDBTestRunner
 from tap_mongodb.tap import TapMongoDB
 from tap_mongodb.types import IncrementalId
 
