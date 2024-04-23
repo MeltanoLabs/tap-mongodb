@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 import json
-import sys
-from typing import Any, Optional
+from functools import cached_property
+from typing import Any
 from urllib.parse import quote_plus
 
+from loguru import logger
 from singer_sdk import Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
 
 from tap_mongodb.connector import MongoDBConnector
 from tap_mongodb.streams import MongoDBCollectionStream
-
-if sys.version_info[:2] >= (3, 7):
-    from backports.cached_property import cached_property
-else:
-    from functools import cached_property
 
 
 class TapMongoDB(Tap):
@@ -51,7 +47,7 @@ class TapMongoDB(Tap):
                 "String (serialized JSON object) with keys 'username', 'password', 'engine', 'host', 'port', "
                 "'dbClusterIdentifier' or 'dbName', 'ssl'. See example at "
                 # pylint: disable-next=line-too-long
-                "https://docs.aws.amazon.com/secretsmanager/latest/userguide/reference_secret_json_structure.html#reference_secret_json_structure_docdb"  # noqa: E501
+                "https://docs.aws.amazon.com/secretsmanager/latest/userguide/reference_secret_json_structure.html#reference_secret_json_structure_docdb"
                 ". The password from this JSON object will be url-encoded by the tap before opening the database "
                 "connection."
             ),
@@ -121,7 +117,7 @@ class TapMongoDB(Tap):
             description=(
                 "In DocumentDB (unlike MongoDB), change streams must be enabled specifically (see "
                 # pylint: disable-next=line-too-long
-                "https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html#change_streams-enabling"  # noqa: E501
+                "https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html#change_streams-enabling"
                 "). If attempting to open a change stream against a collection on which change streams have not been "
                 "enabled, an OperationFailure error will be raised. If this property is set to True, when this error "
                 "is seen, the tap will execute an admin command to enable change streams and then retry the read "
@@ -159,8 +155,28 @@ class TapMongoDB(Tap):
             required=False,
             description="Stream map config. See https://sdk.meltano.com/en/latest/stream_maps.html for documentation.",
         ),
+        th.Property(
+            "change_stream_resume_strategy",
+            th.StringType,
+            required=False,
+            default="resume_after",
+            description=(
+                "Only used when tap is run in log-based replication mode. This setting specifies how the tap creates a "
+                "new change stream on runs after the first. The default is `resume_after` (see "
+                "https://www.mongodb.com/docs/manual/changeStreams/#resumeafter-for-change-streams), which was added "
+                "in MongoDB 3.6 when the ChangeStream API was introduced. The `start_after` setting (see "
+                "https://www.mongodb.com/docs/manual/changeStreams/#startafter-for-change-streams) requires MongoDB "
+                "version 4.2 or greater. You may switch back and forth between `resume_after` and `start_after` "
+                "settings (provided the MongoDB version is at least 4.2) freely. If the value provided to this setting "
+                "is not compatible with the MongoDB version in use, this setting defaults to `resume_after`."
+            ),
+            allowed_values=[
+                "resume_after",
+                "start_after",
+            ],
+        ),
     ).to_dict()
-    config_jsonschema["properties"]["operation_types"]["items"]["enum"] = [
+    config_jsonschema["properties"]["operation_types"]["items"]["enum"] = [  # noqa: RUF012
         "create",
         "createIndexes",
         "delete",
@@ -176,20 +192,20 @@ class TapMongoDB(Tap):
         "update",
     ]
 
-    def _get_mongo_connection_string(self) -> Optional[str]:
+    def _get_mongo_connection_string(self) -> str:
         """Get configured MongoDB connection URI."""
         documentdb_credential_json_string = self.config.get("documentdb_credential_json_string", None)
         if documentdb_credential_json_string is not None:
-            self.logger.debug("Using documentdb_credential_json_string")
+            logger.info("Using documentdb_credential_json_string")
             documentdb_credential_json: dict[str, Any] = json.loads(documentdb_credential_json_string)
-            username: str = documentdb_credential_json.get("username")
-            password: str = documentdb_credential_json.get("password")
-            host: str = documentdb_credential_json.get("host")
-            port: int = documentdb_credential_json.get("port")
+            username: str = documentdb_credential_json.get("username")  # type: ignore[assignment]
+            password: str = documentdb_credential_json.get("password")  # type: ignore[assignment]
+            host: str = documentdb_credential_json.get("host")  # type: ignore[assignment]
+            port: int = documentdb_credential_json.get("port")  # type: ignore[assignment]
             connection_string = f"mongodb://{quote_plus(username)}:{quote_plus(password)}@{host}:{port}"
             return connection_string
 
-        self.logger.debug("Using mongodb_connection_string")
+        logger.info("Using mongodb_connection_string")
         return self.config.get("mongodb_connection_string", None)
 
     def _get_mongo_options(self) -> dict[str, Any]:

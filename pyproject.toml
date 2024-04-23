@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tap-mongodb"
-version = "2.5.0"
+version = "2.6.0"
 description = "`tap-mongodb` is a Singer tap for MongoDB and AWS DocumentDB, built with the Meltano Singer SDK."
 readme = "README.md"
 authors = ["Matt Menzenski"]
@@ -14,11 +14,13 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "<3.12,>=3.7.2"
-singer-sdk = { version = "^0.31.1" }
+python = "<3.13,>=3.9"
+singer-sdk = { version = "^0.36.1" }
 fs-s3fs = { version = "^1.1.1", optional = true }
 pymongo = "^4.4.1"
-"backports.cached-property" = { version = "^1.0.2" }
+strenum = "^0.4.15"
+typing-extensions = {version = "^4.9.0", python = "<3.10"}
+loguru = "^0.7.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -28,8 +30,10 @@ black = "^23.1.0"
 pyupgrade = "^3.3.1"
 mypy = "^1.0.0"
 isort = "^5.11.5"
-singer-sdk = { version = "^0.31.1", extras = ["testing"] }
+singer-sdk = { version = "^0.36.1", extras = ["testing"] }
 pylint = "^3.0.0a6"
+rich = "^13.7.1"
+testcontainers = {extras = ["mongodb"], version = "^4.4.0"}
 
 [tool.poetry.extras]
 s3 = ["fs-s3fs"]
@@ -63,6 +67,10 @@ quote_basic_values = false
 quote_keys_and_basic_values = false
 
 [tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
 select = [
     "E",
     "F",
@@ -74,19 +82,28 @@ exclude = [
     ".secrets",
     "output",
 ]
-line-length = 120
-target-version = "py311"
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-third-party = [
     "pymongo",
     "singer_sdk",
     "pendulum",
 ]
 
-[tool.pylint]
-max-line-length = 120
+[tool.pylint.design]
+max-locals = 30
 
+[tool.pylint.mesages_control]
+max-line-length = 120
 disable = [
     "logging-fstring-interpolation"
+]
+
+[tool.pytest.ini_options]
+# `-rxXs` means show extra info on xfailed, xpassed, and skipped tests
+# see https://docs.pytest.org/en/7.1.x/how-to/skipping.html
+addopts = [
+    "-rxXs",
+    "-v",
+    "--capture=no", # uncomment to allow logger output during tests
 ]

@@ -18,11 +18,11 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - 3.7
-          - 3.8
-          - 3.9
+          - '3.8'
+          - '3.9'
           - '3.10'
-          - 3.11
+          - '3.11'
+          - '3.12'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -43,11 +43,11 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - 3.7
-          - 3.8
-          - 3.9
+          - '3.8'
+          - '3.9'
           - '3.10'
-          - 3.11
+          - '3.11'
+          - '3.12'
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -65,14 +65,14 @@ jobs:
       fail-fast: false
       matrix:
         mongo-version:
-          - 3.6
-          - 4.4
+          - '4.4'
+          - '5.0'
         python-version:
-          - 3.7
-          - 3.8
-          - 3.9
+          - '3.8'
+          - '3.9'
           - '3.10'
-          - 3.11
+          - '3.11'
+          - '3.12'
     steps:
       - uses: actions/checkout@v3
       - name: Install poetry
@@ -84,12 +84,59 @@ jobs:
           cache: poetry
       - name: Install dependencies
         run: poetry install
-      - name: Start MongoDB
-        uses: supercharge/mongodb-github-action@1.9.0
-        with:
-          mongodb-version: ${{ matrix.mongo-version }}
-          mongodb-username: admin
-          mongodb-password: password
-          mongodb-db: test
+      - name: Install mongosh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg
+          wget -qO - https://www.mongodb.org/static/pgp/server-${{ matrix.mongo-version }}.asc | sudo apt-key add -
+          echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/${{ matrix.mongo-version }} multiverse" \
+            | sudo tee /etc/apt/sources.list.d/mongodb-org-${{ matrix.mongo-version }}.list
+          sudo apt-get update
+          sudo apt-get install -y mongodb-mongosh
+      - name: Confirm mongosh install
+        run: |
+          mongosh --version
+      - name: Start Databases
+        env:
+          MONGODB_VERSION: ${{ matrix.mongo-version}}
+        run: |
+          docker-compose -f compose.yaml up -d
+      - name: Wait for mongo to be available
+        run: |
+          echo "###### Waiting for localhost:27117 instance startup"
+          until mongosh --host localhost:27117 --eval 'quit(db.runCommand({ ping: 1 }).ok ? 0 : 2)' &>/dev/null; do
+            printf '.'
+            sleep 1
+          done
+          echo "###### Working localhost:27117 instance found"
       - name: Test with pytest
         run: poetry run pytest
+  integration_tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mongo-version:
+          - '4.4'
+          - '5.0'
+        python-version:
+          - '3.8'
+          - '3.9'
+          - '3.10'
+          - '3.11'
+          - '3.12'
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install poetry
+        run: pipx install poetry
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: poetry
+      - name: Install dependencies
+        run: poetry install --with dev
+      - name: Test with pytest
+        env:
+          TEST_MONGODB_VERSION: ${{ matrix.mongo-version }}
+        run: poetry run python -m pytest integration_tests/

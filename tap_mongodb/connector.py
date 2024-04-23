@@ -1,29 +1,21 @@
 """MongoDB/DocumentDB connector utility"""
 
 import sys
-from logging import Logger, getLogger
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 from singer_sdk._singerlib.catalog import CatalogEntry, MetadataMapping, Schema
 
 from tap_mongodb.schema import SCHEMA
+from tap_mongodb.types import MongoVersion
 
 if sys.version_info[:2] < (3, 8):
     from backports.cached_property import cached_property
 else:
     from functools import cached_property
-
-
-try:
-    from typing import TypeAlias  # pylint: disable=ungrouped-imports
-
-    MongoVersion: TypeAlias = Tuple[int, int]
-except ImportError:
-    TypeAlias = None
-    MongoVersion = Tuple[int, int]
 
 
 class MongoDBConnector:
@@ -42,8 +34,7 @@ class MongoDBConnector:
         self._db_name = db_name
         self._datetime_conversion: str = datetime_conversion.upper()
         self._prefix: Optional[str] = prefix
-        self._logger: Logger = getLogger(__name__)
-        self._version: Optional[MongoVersion] = None
+        self._version: MongoVersion
 
     @cached_property
     def mongo_client(self) -> MongoClient:
@@ -56,7 +47,7 @@ class MongoDBConnector:
             version_array: List[int] = server_info["versionArray"]
             self._version = (version_array[0], version_array[1])
         except Exception as exception:
-            self._logger.exception("Could not connect to MongoDB")
+            logger.opt(exception=exception).error("Could not connect to MongoDB")
             raise RuntimeError("Could not connect to MongoDB") from exception
         return client
 
@@ -66,7 +57,7 @@ class MongoDBConnector:
         return self.mongo_client[self._db_name]
 
     @property
-    def version(self) -> Optional[MongoVersion]:
+    def version(self) -> MongoVersion:
         """Returns the MongoVersion that is being used."""
         return self._version
 
@@ -123,12 +114,12 @@ class MongoDBConnector:
                 # Skip collections that are not accessible by the authenticated user
                 # This is a common case when using a shared cluster
                 # https://docs.mongodb.com/manual/core/security-users/#database-user-privileges
-                self._logger.info(
+                logger.warning(
                     f"Skipping collection {self.database.name}.{collection}, user does not have permission to it."
                 )
                 continue
 
-            self._logger.info(f"Discovered collection {self.database.name}.{collection}")
+            logger.info(f"Discovered collection {self.database.name}.{collection}")
             catalog_entry: CatalogEntry = self.discover_catalog_entry(collection)
             result.append(catalog_entry.to_dict())
 

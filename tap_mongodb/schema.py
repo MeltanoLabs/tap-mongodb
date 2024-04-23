@@ -15,7 +15,22 @@ SCHEMA = {
         },
         "document": {
             "additionalProperties": True,
-            "description": "The document from the collection",
+            "description": (
+                "The document from the collection. When running the tap in log-based replication mode, this is equal "
+                "to the fullDocument field on the MongoDB Change Stream change event."
+            ),
+            "type": [
+                "object",
+                "null",
+            ],
+        },
+        "update_description": {
+            "additionalProperties": True,
+            "description": (
+                "When running the tap in log-based replication mode, this is equal to the updateDescription field on "
+                "the MongoDB Change Stream change event. This field will always be null when the tap runs in "
+                "incremental replication mode."
+            ),
             "type": [
                 "object",
                 "null",
@@ -38,6 +53,33 @@ SCHEMA = {
                 },
                 "collection": {
                     "description": "Name of the MongoDB/DocumentDB collection from which this record was extracted.",
+                    "type": [
+                        "string",
+                        "null",
+                    ],
+                },
+            },
+        },
+        "to": {
+            "description": (
+                "When the tap is running in log-based replication mode, and the change event is of operation_type "
+                "'rename' (meaning, that a database collection was renamed), this field indicates the new namespace."
+            ),
+            "additionalProperties": False,
+            "type": [
+                "object",
+                "null",
+            ],
+            "properties": {
+                "database": {
+                    "description": "New name of the MongoDB/DocumentDB database.",
+                    "type": [
+                        "string",
+                        "null",
+                    ],
+                },
+                "collection": {
+                    "description": "New name of the MongoDB/DocumentDB collection.",
                     "type": [
                         "string",
                         "null",
