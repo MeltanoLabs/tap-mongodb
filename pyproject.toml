@@ -33,6 +33,7 @@ singer-sdk = { version = "^0.36.1", extras = ["testing"] }
 pylint = "^3.0.0a6"
 testcontainers-mongodb = "^0.0.1rc1"
 loguru = "^0.7.2"
+rich = "^13.7.1"
 
 [tool.poetry.extras]
 s3 = ["fs-s3fs"]
@@ -89,9 +90,11 @@ known-third-party = [
     "pendulum",
 ]
 
-[tool.pylint]
-max-line-length = 120
+[tool.pylint.design]
+max-locals = 30
 
+[tool.pylint.mesages_control]
+max-line-length = 120
 disable = [
     "logging-fstring-interpolation"
 ]
@@ -101,6 +104,6 @@ disable = [
 # see https://docs.pytest.org/en/7.1.x/how-to/skipping.html
 addopts = [
     "-rxXs",
-    "-vv",
-    "--capture=no",
+    "-v",
+    "--capture=no", # uncomment to allow logger output during tests
 ]
