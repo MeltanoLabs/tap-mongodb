@@ -14,7 +14,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "<3.13,>=3.8"
+python = "<3.13,>=3.9"
 singer-sdk = { version = "^0.36.1" }
 fs-s3fs = { version = "^1.1.1", optional = true }
 pymongo = "^4.4.1"
@@ -31,9 +31,9 @@ mypy = "^1.0.0"
 isort = "^5.11.5"
 singer-sdk = { version = "^0.36.1", extras = ["testing"] }
 pylint = "^3.0.0a6"
-testcontainers-mongodb = "^0.0.1rc1"
 loguru = "^0.7.2"
 rich = "^13.7.1"
+testcontainers = {extras = ["mongodb"], version = "^4.4.0"}
 
 [tool.poetry.extras]
 s3 = ["fs-s3fs"]
