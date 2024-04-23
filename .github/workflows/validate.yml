@@ -111,3 +111,32 @@ jobs:
           echo "###### Working localhost:27117 instance found"
       - name: Test with pytest
         run: poetry run pytest
+  integration_tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mongo-version:
+          - '4.4'
+          - '5.0'
+        python-version:
+          - '3.8'
+          - '3.9'
+          - '3.10'
+          - '3.11'
+          - '3.12'
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install poetry
+        run: pipx install poetry
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: poetry
+      - name: Install dependencies
+        run: poetry install --with dev
+      - name: Test with pytest
+        env:
+          TEST_MONGODB_VERSION: ${{ matrix.mongo-version }}
+        run: poetry run python -m pytest integration_tests/
