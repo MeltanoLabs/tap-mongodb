@@ -332,7 +332,7 @@ class MongoDBCollectionStream(Stream):
                 logger.info(
                     f"Yielding 'dummy' record for collection {collection.name} with resume token {resume_token}"
                 )
-                yield {
+                dummy_record: dict = {
                     "replication_key": change_stream.resume_token["_data"],
                     "object_id": None,
                     "document": None,
@@ -342,6 +342,12 @@ class MongoDBCollectionStream(Stream):
                     "namespace": None,
                     "to": None,
                 }
+                if should_add_metadata:
+                    now: datetime = datetime.now(timezone.utc)
+                    dummy_record["_sdc_extracted_at"] = now
+                    dummy_record["_sdc_batched_at"] = now
+
+                yield dummy_record
                 keep_open = False
                 # has_seen_a_real_record = True
 
