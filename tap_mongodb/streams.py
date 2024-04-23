@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, Generator, Iterable, Optional, Union
 
 from bson.objectid import ObjectId
+from loguru import logger
 from pendulum import DateTime
 from pymongo import ASCENDING
 from pymongo.collection import Collection
@@ -120,9 +121,7 @@ class MongoDBCollectionStream(Stream):
 
         Raises:
             ValueError: if configured replication method is unsupported, or if replication key is absent
-
         """
-
         # This also creates a state entry if one does not yet exist:
         state_dict = self.get_context_state(context)
 
@@ -131,18 +130,21 @@ class MongoDBCollectionStream(Stream):
             REPLICATION_INCREMENTAL,
             REPLICATION_LOG_BASED,
         }:
-            msg = (
+            unsupported_replication_method_msg: str = (
                 f"Unrecognized replication method {self.replication_method}. Only {REPLICATION_INCREMENTAL} and"
                 f" {REPLICATION_LOG_BASED} replication methods are supported."
             )
-            self.logger.critical(msg)
-            raise ValueError(msg)
+            logger.error(unsupported_replication_method_msg)
+            raise ValueError(unsupported_replication_method_msg)
 
         if not self.replication_key:
-            raise ValueError(
+            missing_replication_key_msg: str = (
                 f"Could not detect replication key for '{self.name}' stream"
-                f"(replication method={self.replication_method})",
+                f"(replication method={self.replication_method})"
             )
+            logger.error(missing_replication_key_msg)
+            raise ValueError(missing_replication_key_msg)
+
         treat_as_sorted = self.is_sorted
         if not treat_as_sorted and self.state_partitioning_keys is not None:
             # Streams with custom state partitioning are not resumable.
@@ -193,11 +195,11 @@ class MongoDBCollectionStream(Stream):
     ) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects when running in incremental replication mode."""
         if bookmark:
-            self.logger.debug(f"using existing bookmark: {bookmark}")
+            logger.info(f"using existing bookmark: {bookmark}")
             start_date = to_object_id(bookmark)
         else:
             start_date_str = self.config.get("start_date", DEFAULT_START_DATE)
-            self.logger.debug(f"no bookmark - using start date: {start_date_str}")
+            logger.info(f"no bookmark - using start date: {start_date_str}")
             start_date = to_object_id(start_date_str)
 
         for record in collection.find({"_id": {"$gt": start_date}}).sort([("_id", ASCENDING)]):
@@ -234,10 +236,12 @@ class MongoDBCollectionStream(Stream):
         resume_strategy: ResumeStrategy = get_resume_strategy(mongo_version, change_stream_resume_strategy)
 
         if bookmark is not None and bookmark != DEFAULT_START_DATE:
-            self.logger.debug(f"using bookmark: {bookmark}")
+            logger.info(f"bookmark is not None and not default start date. It is {bookmark}")
             if resume_strategy == ResumeStrategy.START_AFTER:
+                logger.info(f"strategy is START_AFTER, bookmark is {bookmark}")
                 change_stream_options["start_after"] = {"_data": bookmark}
             elif resume_strategy == ResumeStrategy.RESUME_AFTER:
+                logger.info(f"strategy is RESUME_AFTER, bookmark is {bookmark}")
                 change_stream_options["resume_after"] = {"_data": bookmark}
         operation_types_allowlist: set = set(self.config.get("operation_types"))
         has_seen_a_record: bool = False
@@ -245,7 +249,7 @@ class MongoDBCollectionStream(Stream):
 
         try:
             change_stream = collection.watch(**change_stream_options)
-            self.logger.info("Opened change stream")
+            logger.info("Opened change stream")
         except OperationFailure as operation_failure:
             if (
                 operation_failure.code == 136
@@ -265,19 +269,17 @@ class MongoDBCollectionStream(Stream):
                     raise RuntimeError(
                         f"Unable to enable change streams on collection {collection.name}"
                     ) from operation_failure
-            elif (
-                resume_strategy == ResumeStrategy.RESUME_AFTER
-                and operation_failure.code == 286
-                and "as the resume point may no longer be in the oplog." in operation_failure.details["errmsg"]
-            ):
-                self.logger.warning("Unable to resume change stream from resume token. Resetting resume token.")
+            elif operation_failure.code == 286:
+                logger.opt(exception=operation_failure).error(
+                    "Unable to resume (open) change stream from resume token. Resetting resume token."
+                )
                 change_stream_options.pop("resume_after", None)
                 change_stream = collection.watch(**change_stream_options)
             else:
-                self.logger.critical(f"operation_failure on collection.watch: {operation_failure}")
+                logger.opt(exception=operation_failure).error("OperationFailure on collection.watch()")
                 raise operation_failure
         except Exception as exception:
-            self.logger.critical(exception)
+            logger.opt(exception=exception).error("Unhandled exception on collection.watch()")
             raise exception
 
         while change_stream.alive and keep_open:
@@ -285,18 +287,19 @@ class MongoDBCollectionStream(Stream):
             try:
                 record = change_stream.try_next()
             except OperationFailure as operation_failure:
-                if (
-                    resume_strategy == ResumeStrategy.RESUME_AFTER
-                    and operation_failure.code == 286
-                    and "as the resume point may no longer be in the oplog." in operation_failure.details["errmsg"]
-                ):
-                    self.logger.warning("Unable to resume change stream from resume token. Resetting resume token.")
+                if operation_failure.code == 286:
+                    logger.opt(exception=operation_failure).error(
+                        "Unable to resume (try_next) change stream from resume token. Resetting resume token."
+                    )
                     change_stream_options.pop("resume_after", None)
                     change_stream = collection.watch(**change_stream_options)
                     record = None
                 else:
-                    self.logger.critical(f"operation_failure on try_next: {operation_failure}")
+                    logger.opt(exception=operation_failure).error("OperationFailure on try_next")
                     raise operation_failure
+            except Exception as exception:
+                logger.opt(exception=exception).error("Unhandled exception on try_next")
+                raise exception
             # if we have processed any records, a None record means that we've caught up to the end of the
             # stream - set keep_open to False so that the change stream is closed and the tap exits.
             # if no records have been processed, a None record means that there has been no activity in the
@@ -328,14 +331,12 @@ class MongoDBCollectionStream(Stream):
                 has_seen_a_record = True
 
             if record is None and has_seen_a_record:
-                self.logger.info(
-                    "Reached the end of the change stream after consuming at least one record, closing it."
-                )
+                logger.info("Reached the end of the change stream after consuming at least one record, closing it.")
                 keep_open = False
             if record is not None:
                 operation_type = record["operationType"]
                 if operation_type not in operation_types_allowlist:
-                    self.logger.debug(f"Skipping record of operationType {operation_type} which is not in allowlist")
+                    logger.info(f"Skipping record of operationType {operation_type} which is not in allowlist")
                     continue
                 cluster_time: datetime = record["clusterTime"].as_datetime()
                 # fullDocument key is not present on delete events - if it is missing, fall back to documentKey
@@ -389,5 +390,5 @@ class MongoDBCollectionStream(Stream):
                 f"Unrecognized replication method {self.replication_method}. Only {REPLICATION_INCREMENTAL} and"
                 f" {REPLICATION_LOG_BASED} replication methods are supported."
             )
-            self.logger.critical(msg)
+            logger.error(msg)
             raise ValueError(msg)

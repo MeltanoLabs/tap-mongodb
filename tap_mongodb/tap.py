@@ -7,6 +7,7 @@ from functools import cached_property
 from typing import Any
 from urllib.parse import quote_plus
 
+from loguru import logger
 from singer_sdk import Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
 
@@ -195,7 +196,7 @@ class TapMongoDB(Tap):
         """Get configured MongoDB connection URI."""
         documentdb_credential_json_string = self.config.get("documentdb_credential_json_string", None)
         if documentdb_credential_json_string is not None:
-            self.logger.debug("Using documentdb_credential_json_string")
+            logger.info("Using documentdb_credential_json_string")
             documentdb_credential_json: dict[str, Any] = json.loads(documentdb_credential_json_string)
             username: str = documentdb_credential_json.get("username")  # type: ignore[assignment]
             password: str = documentdb_credential_json.get("password")  # type: ignore[assignment]
@@ -204,7 +205,7 @@ class TapMongoDB(Tap):
             connection_string = f"mongodb://{quote_plus(username)}:{quote_plus(password)}@{host}:{port}"
             return connection_string
 
-        self.logger.debug("Using mongodb_connection_string")
+        logger.info("Using mongodb_connection_string")
         return self.config.get("mongodb_connection_string", None)
 
     def _get_mongo_options(self) -> dict[str, Any]:
