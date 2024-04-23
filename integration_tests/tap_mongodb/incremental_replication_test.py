@@ -2,10 +2,11 @@
 
 import os
 from datetime import datetime, timezone
+
 from bson.objectid import ObjectId
 from pymongo import MongoClient
-from pymongo.database import Database
 from pymongo.collection import Collection
+from pymongo.database import Database
 
 
 def test_incremental_replication() -> None:
@@ -31,7 +32,7 @@ def test_incremental_replication() -> None:
 
     # WHEN tap-mongodb is run in incremental mode with a start date that predates the oldest record in the collection
 
-    # THEN all documents from the collection should be returned 
+    # THEN all documents from the collection should be returned
 
 
 def test_incremental_replication_two() -> None:
@@ -57,4 +58,4 @@ def test_incremental_replication_two() -> None:
 
     # WHEN tap-mongodb is run in incremental mode with a start date that predates the oldest record in the collection
 
-    # THEN all documents from the collection should be returned 
+    # THEN all documents from the collection should be returned
