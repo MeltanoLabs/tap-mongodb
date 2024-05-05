@@ -343,7 +343,9 @@ class MongoDBCollectionStream(Stream):
                         # fullDocument key is not present on delete events - if it is missing, fall back to documentKey
                         # instead. If that is missing, pass None/null to avoid raising an error.
                         document = record.get("fullDocument", record.get("documentKey", None))
-                        object_id: Optional[ObjectId] = document["_id"] if "_id" in document else None
+                        object_id: Optional[ObjectId] = (
+                            document["_id"] if document is not None and "_id" in document else None
+                        )
                         parsed_record = {
                             "replication_key": record["_id"]["_data"],
                             "object_id": str(object_id) if object_id is not None else None,
