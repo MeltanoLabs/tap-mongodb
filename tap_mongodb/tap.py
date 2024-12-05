@@ -102,7 +102,7 @@ class TapMongoDB(Tap):
                 th.StringType,
                 th.ArrayType(th.StringType),
             ),
-            required=False,
+            required=True,
             default=[],
             description=(
                 "Collections to discover (default: all). Useful for improving catalog discovery performance."
