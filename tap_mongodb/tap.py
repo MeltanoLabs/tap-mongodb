@@ -97,6 +97,18 @@ class TapMongoDB(Tap):
             description="An optional prefix which will be added to each stream name.",
         ),
         th.Property(
+            "filter_collections",
+            th.OneOf(
+                th.StringType,
+                th.ArrayType(th.StringType),
+            ),
+            required=False,
+            default=[],
+            description=(
+                "Collections to discover (default: all). Useful for improving catalog discovery performance."
+            ),
+        ),
+        th.Property(
             "start_date",
             th.DateTimeType,
             required=False,
@@ -210,6 +222,7 @@ class TapMongoDB(Tap):
             self.config.get("database"),
             self.config.get("datetime_conversion"),
             prefix=self.config.get("prefix", None),
+            collections=self.config["filter_collections"],
         )
 
     @property
