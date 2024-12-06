@@ -118,9 +118,11 @@ class MongoDBConnector:
             The discovered catalog entries as a list.
         """
         result: List[Dict] = []
-        collections = self._collections or self.database.list_collection_names(
+
+        collections = self.database.list_collection_names(
             authorizedCollections=True,
             nameOnly=True,
+            filter={"$or": [{"name": c} for c in self._collections]} if self._collections else None,
         )
 
         for collection in collections:
