@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tap-mongodb"
-version = "2.5.0"
+version = "2.6.0"
 description = "`tap-mongodb` is a Singer tap for MongoDB and AWS DocumentDB, built with the Meltano Singer SDK."
 readme = "README.md"
 authors = ["Matt Menzenski"]
@@ -21,6 +21,7 @@ pymongo = "^4.4.1"
 "backports.cached-property" = { version = "^1.0.2" }
 pylint = "^3.3.2"
 maison = "^2.0.0"
+ruff = "^0.8.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -41,7 +42,11 @@ select = [
 ]
 
 [tool.lint.isort]
-isort = "^5.11.5"
+known-third-party = [
+    "pymongo",
+    "singer_sdk",
+    "pendulum",
+]
 
 [tool.poetry.extras]
 s3 = ["fs-s3fs"]
@@ -75,26 +80,14 @@ quote_basic_values = false
 quote_keys_and_basic_values = false
 
 [tool.ruff]
-select = [
-    "E",
-    "F",
-    "RUF",
-    "I001",
-]
 exclude = [
     ".meltano",
     ".secrets",
     "output",
 ]
+
 line-length = 120
 target-version = "py311"
-
-[tool.ruff.isort]
-known-third-party = [
-    "pymongo",
-    "singer_sdk",
-    "pendulum",
-]
 
 [tool.pylint]
 max-line-length = 120
