@@ -19,7 +19,6 @@ singer-sdk = { version = "^0.31.1" }
 fs-s3fs = { version = "^1.1.1", optional = true }
 pymongo = "^4.4.1"
 "backports.cached-property" = { version = "^1.0.2" }
-maison = "^2.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -28,9 +27,19 @@ darglint = "^1.8.1"
 black = "^23.1.0"
 pyupgrade = "^3.3.1"
 mypy = "^1.0.0"
-isort = "^5.11.5"
 singer-sdk = { version = "^0.31.1", extras = ["testing"] }
 pylint = "^3.0.0a6"
+
+[tool.lint]
+select = [
+    "E",
+    "F",
+    "RUF",
+    "I001",
+]
+
+[tool.lint.isort]
+isort = "^5.11.5"
 
 [tool.poetry.extras]
 s3 = ["fs-s3fs"]
@@ -87,7 +96,6 @@ known-third-party = [
 
 [tool.pylint]
 max-line-length = 120
-
-disable = [
-    "logging-fstring-interpolation"
-]
+max-attributes = 15
+max-args = 15
+disable = ["logging-fstring-interpolation", "too-many-positional-arguments"]

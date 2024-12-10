@@ -122,19 +122,21 @@ class MongoDBConnector:
         collections = self.database.list_collection_names(
             authorizedCollections=True,
             nameOnly=True,
-            filter={
-                "$or": [
-                    {
-                        "name": {
-                            "$regex": f"^{c}$",
-                            "$options": "i",
+            filter=(
+                {
+                    "$or": [
+                        {
+                            "name": {
+                                "$regex": f"^{c}$",
+                                "$options": "i",
+                            }
                         }
-                    }
-                    for c in self._collections
-                ]
-            }
-            if self._collections
-            else None,
+                        for c in self._collections
+                    ]
+                }
+                if self._collections
+                else None
+            ),
         )
 
         for collection in collections:
