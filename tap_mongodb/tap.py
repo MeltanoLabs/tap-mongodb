@@ -104,9 +104,7 @@ class TapMongoDB(Tap):
             ),
             required=True,
             default=[],
-            description=(
-                "Collections to discover (default: all). Useful for improving catalog discovery performance."
-            ),
+            description="Collections to discover (default: all). Useful for improving catalog discovery performance.",
         ),
         th.Property(
             "start_date",
