@@ -26,7 +26,7 @@ except ImportError:
     MongoVersion = Tuple[int, int]
 
 
-class MongoDBConnector:
+class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
     """MongoDB/DocumentDB connector class"""
 
     def __init__(  # pylint: disable=too-many-arguments
