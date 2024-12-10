@@ -33,7 +33,9 @@ def recursive_replace_empty_in_dict(dct):
     NaN, inf, and -inf are unable to be parsed by the json library, so these values will be replaced with None.
     """
     for key, value in dct.items():
-        if value in [-math.inf, math.inf, math.nan]:
+        if isinstance(value, float) and (math.isinf(value) or math.isnan(value)):
+            dct[key] = None
+        elif isinstance(value, str) and str(value).lower() in ["none", "nan", "", "empty", " ", "null"]:
             dct[key] = None
         elif isinstance(value, list):
             for i, item in enumerate(value):
@@ -341,7 +343,9 @@ class MongoDBCollectionStream(Stream):
                         # fullDocument key is not present on delete events - if it is missing, fall back to documentKey
                         # instead. If that is missing, pass None/null to avoid raising an error.
                         document = record.get("fullDocument", record.get("documentKey", None))
-                        object_id: Optional[ObjectId] = document["_id"] if "_id" in document else None
+                        object_id: Optional[ObjectId] = (
+                            document["_id"] if document is not None and "_id" in document else None
+                        )
                         parsed_record = {
                             "replication_key": record["_id"]["_data"],
                             "object_id": str(object_id) if object_id is not None else None,

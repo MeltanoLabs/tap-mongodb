@@ -2,7 +2,7 @@
 
 import sys
 from logging import Logger, getLogger
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -36,12 +36,14 @@ class MongoDBConnector:
         db_name: str,
         datetime_conversion: str,
         prefix: Optional[str] = None,
+        collections: Optional[Union[str, List[str]]] = None,
     ) -> None:
         self._connection_string = connection_string
         self._options = options
         self._db_name = db_name
         self._datetime_conversion: str = datetime_conversion.upper()
         self._prefix: Optional[str] = prefix
+        self._collections = [collections] if isinstance(collections, str) else collections
         self._logger: Logger = getLogger(__name__)
         self._version: Optional[MongoVersion] = None
 
@@ -116,7 +118,28 @@ class MongoDBConnector:
             The discovered catalog entries as a list.
         """
         result: List[Dict] = []
-        for collection in self.database.list_collection_names(authorizedCollections=True, nameOnly=True):
+
+        collections = self.database.list_collection_names(
+            authorizedCollections=True,
+            nameOnly=True,
+            filter=(
+                {
+                    "$or": [
+                        {
+                            "name": {
+                                "$regex": f"^{c}$",
+                                "$options": "i",
+                            }
+                        }
+                        for c in self._collections
+                    ]
+                }
+                if self._collections
+                else None
+            ),
+        )
+
+        for collection in collections:
             try:
                 self.database[collection].find_one()
             except PyMongoError:

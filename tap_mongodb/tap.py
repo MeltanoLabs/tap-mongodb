@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 from urllib.parse import quote_plus
 
 from singer_sdk import Tap
@@ -51,7 +51,7 @@ class TapMongoDB(Tap):
                 "String (serialized JSON object) with keys 'username', 'password', 'engine', 'host', 'port', "
                 "'dbClusterIdentifier' or 'dbName', 'ssl'. See example at "
                 # pylint: disable-next=line-too-long
-                "https://docs.aws.amazon.com/secretsmanager/latest/userguide/reference_secret_json_structure.html#reference_secret_json_structure_docdb"  # noqa: E501
+                "https://docs.aws.amazon.com/secretsmanager/latest/userguide/reference_secret_json_structure.html#reference_secret_json_structure_docdb"
                 ". The password from this JSON object will be url-encoded by the tap before opening the database "
                 "connection."
             ),
@@ -97,6 +97,16 @@ class TapMongoDB(Tap):
             description="An optional prefix which will be added to each stream name.",
         ),
         th.Property(
+            "filter_collections",
+            th.OneOf(
+                th.StringType,
+                th.ArrayType(th.StringType),
+            ),
+            required=True,
+            default=[],
+            description="Collections to discover (default: all). Useful for improving catalog discovery performance.",
+        ),
+        th.Property(
             "start_date",
             th.DateTimeType,
             required=False,
@@ -121,7 +131,7 @@ class TapMongoDB(Tap):
             description=(
                 "In DocumentDB (unlike MongoDB), change streams must be enabled specifically (see "
                 # pylint: disable-next=line-too-long
-                "https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html#change_streams-enabling"  # noqa: E501
+                "https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html#change_streams-enabling"
                 "). If attempting to open a change stream against a collection on which change streams have not been "
                 "enabled, an OperationFailure error will be raised. If this property is set to True, when this error "
                 "is seen, the tap will execute an admin command to enable change streams and then retry the read "
@@ -160,7 +170,7 @@ class TapMongoDB(Tap):
             description="Stream map config. See https://sdk.meltano.com/en/latest/stream_maps.html for documentation.",
         ),
     ).to_dict()
-    config_jsonschema["properties"]["operation_types"]["items"]["enum"] = [
+    config_jsonschema["properties"]["operation_types"]["items"]["enum"]: ClassVar = [
         "create",
         "createIndexes",
         "delete",
@@ -210,6 +220,7 @@ class TapMongoDB(Tap):
             self.config.get("database"),
             self.config.get("datetime_conversion"),
             prefix=self.config.get("prefix", None),
+            collections=self.config["filter_collections"],
         )
 
     @property
