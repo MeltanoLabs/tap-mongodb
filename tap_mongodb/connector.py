@@ -1,6 +1,6 @@
 """MongoDB/DocumentDB connector utility"""
 
-import sys
+from functools import cached_property
 from logging import Logger, getLogger
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -10,12 +10,6 @@ from pymongo.errors import PyMongoError
 from singer_sdk._singerlib.catalog import CatalogEntry, MetadataMapping, Schema
 
 from tap_mongodb.schema import SCHEMA
-
-if sys.version_info[:2] < (3, 8):
-    from backports.cached_property import cached_property
-else:
-    from functools import cached_property
-
 
 try:
     from typing import TypeAlias  # pylint: disable=ungrouped-imports

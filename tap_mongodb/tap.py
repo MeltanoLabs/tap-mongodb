@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import sys
+from functools import cached_property
 from typing import Any, Optional
 from urllib.parse import quote_plus
 
@@ -12,11 +12,6 @@ from singer_sdk import typing as th  # JSON schema typing helpers
 
 from tap_mongodb.connector import MongoDBConnector
 from tap_mongodb.streams import MongoDBCollectionStream
-
-if sys.version_info[:2] >= (3, 7):
-    from backports.cached_property import cached_property
-else:
-    from functools import cached_property
 
 
 class TapMongoDB(Tap):
