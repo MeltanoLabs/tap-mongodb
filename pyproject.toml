@@ -80,7 +80,6 @@ target-version = "py311"
 known-third-party = [
     "pymongo",
     "singer_sdk",
-    "pendulum",
 ]
 
 [tool.pylint]
