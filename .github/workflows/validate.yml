@@ -18,7 +18,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - 3.7
           - 3.8
           - 3.9
           - '3.10'
@@ -34,7 +33,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: poetry
       - name: Install dependencies
-        run: poetry install
+        run: |
+          poetry env use ${{ matrix.python-version }}
+          poetry install
       - name: Run pre-commit checks
         uses: pre-commit/action@v3.0.0
   smoke-test:
@@ -43,7 +44,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - 3.7
           - 3.8
           - 3.9
           - '3.10'
@@ -51,10 +51,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Install poetry
-        run: pipx install poetry
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
       - name: Install meltano
-        run: pipx install meltano
+        run: pipx install --python ${{ matrix.python-version }} meltano
       - name: Meltano install
         run: meltano install
       - name: Smoke test
@@ -68,7 +70,6 @@ jobs:
           - 3.6
           - 4.4
         python-version:
-          - 3.7
           - 3.8
           - 3.9
           - '3.10'
@@ -83,7 +84,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: poetry
       - name: Install dependencies
-        run: poetry install
+        run: |
+          poetry env use ${{ matrix.python-version }}
+          poetry install
       - name: Start MongoDB
         uses: supercharge/mongodb-github-action@1.9.0
         with:
