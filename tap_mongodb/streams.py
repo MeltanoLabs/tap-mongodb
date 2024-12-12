@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import Any, Generator, Iterable, Optional
 
 from bson.objectid import ObjectId
-from pendulum import DateTime
 from pymongo import ASCENDING
 from pymongo.collection import Collection
 from pymongo.database import Database
@@ -178,7 +177,7 @@ class MongoDBCollectionStream(Stream):
         Yields:
             Record message objects.
         """
-        extracted_at: DateTime = record.pop("_sdc_extracted_at", utc_now())
+        extracted_at: datetime = record.pop("_sdc_extracted_at", utc_now())
         pop_deselected_record_properties(record, self.schema, self.mask, self.logger)
         record = conform_record_data_types(
             stream_name=self.name,
