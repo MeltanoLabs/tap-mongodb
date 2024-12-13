@@ -2,7 +2,7 @@
 
 from functools import cached_property
 from logging import Logger, getLogger
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -30,14 +30,14 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         db_name: str,
         datetime_conversion: str,
         prefix: Optional[str] = None,
-        collections: Optional[Union[str, List[str]]] = None,
+        collections: Optional[List[str]] = None,
     ) -> None:
         self._connection_string = connection_string
         self._options = options
         self._db_name = db_name
         self._datetime_conversion: str = datetime_conversion.upper()
         self._prefix: Optional[str] = prefix
-        self._collections = [collections] if isinstance(collections, str) else collections
+        self._collections = collections
         self._logger: Logger = getLogger(__name__)
         self._version: Optional[MongoVersion] = None
 

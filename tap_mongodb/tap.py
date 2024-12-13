@@ -94,10 +94,7 @@ class TapMongoDB(Tap):
         ),
         th.Property(
             "filter_collections",
-            th.OneOf(
-                th.StringType,
-                th.ArrayType(th.StringType),
-            ),
+            th.ArrayType(th.StringType),
             required=True,
             default=[],
             description="Collections to discover (default: all). Useful for improving catalog discovery performance.",
