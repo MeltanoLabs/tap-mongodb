@@ -97,7 +97,10 @@ class TapMongoDB(Tap):
             th.ArrayType(th.StringType),
             required=True,
             default=[],
-            description="Collections to discover (default: all). Useful for improving catalog discovery performance.",
+            description=(
+                "Collections to discover (default: all) - filtering is case-insensitive. Useful for improving catalog "
+                "discovery performance."
+            ),
         ),
         th.Property(
             "start_date",
