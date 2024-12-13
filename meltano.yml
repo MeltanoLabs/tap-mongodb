@@ -58,6 +58,10 @@ plugins:
           description: |
             An optional prefix which will be added to each stream name.
           value: ''
+        - name: filter_collections
+          kind: array
+          description: |
+            Collections to discover (default: all). Useful for improving catalog discovery performance.
         - name: start_date
           kind: date_iso8601
           description: |

@@ -20,7 +20,7 @@ except ImportError:
     MongoVersion = Tuple[int, int]
 
 
-class MongoDBConnector:
+class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
     """MongoDB/DocumentDB connector class"""
 
     def __init__(  # pylint: disable=too-many-arguments
@@ -30,12 +30,14 @@ class MongoDBConnector:
         db_name: str,
         datetime_conversion: str,
         prefix: Optional[str] = None,
+        collections: Optional[List[str]] = None,
     ) -> None:
         self._connection_string = connection_string
         self._options = options
         self._db_name = db_name
         self._datetime_conversion: str = datetime_conversion.upper()
         self._prefix: Optional[str] = prefix
+        self._collections = collections
         self._logger: Logger = getLogger(__name__)
         self._version: Optional[MongoVersion] = None
 
@@ -110,7 +112,26 @@ class MongoDBConnector:
             The discovered catalog entries as a list.
         """
         result: List[Dict] = []
-        for collection in self.database.list_collection_names(authorizedCollections=True, nameOnly=True):
+
+        collections = self.database.list_collection_names(
+            authorizedCollections=True,
+            nameOnly=True,
+            filter={
+                "$or": [
+                    {
+                        "name": {
+                            "$regex": f"^{c}$",
+                            "$options": "i",
+                        }
+                    }
+                    for c in self._collections
+                ]
+            }
+            if self._collections
+            else None,
+        )
+
+        for collection in collections:
             try:
                 self.database[collection].find_one()
             except PyMongoError:
