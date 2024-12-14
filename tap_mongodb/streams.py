@@ -323,7 +323,8 @@ class MongoDBCollectionStream(Stream):
                         # doesn't need to wait around for activity. It can just yield a "dummy" record with the resume
                         # token from the change stream, exit immediately, and then pick up processing the change stream
                         # from this point the next time the tap is run. So that's what we do.
-                        yield {
+
+                        record = {
                             "replication_key": change_stream.resume_token["_data"],
                             "object_id": None,
                             "document": None,
@@ -331,6 +332,10 @@ class MongoDBCollectionStream(Stream):
                             "cluster_time": None,
                             "namespace": None,
                         }
+
+                        recursive_replace_empty_in_dict(record)
+
+                        yield record
                         has_seen_a_record = True
 
                     if record is None and has_seen_a_record:
