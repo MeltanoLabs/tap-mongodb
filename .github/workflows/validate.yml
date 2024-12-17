@@ -133,7 +133,7 @@ jobs:
         run: uv tool install meltano
       - run: meltano config meltano set venv.backend uv
       - run: >
-          uv run --script seed.py
+          uv run scripts/seed.py
           --host localhost
           --port 27017
           --database ${{ env.DATABASE }}
