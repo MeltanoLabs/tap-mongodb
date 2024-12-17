@@ -132,8 +132,14 @@ jobs:
       - name: Install Meltano
         run: uv tool install meltano
       - run: meltano config meltano set venv.backend uv
-      - run: |
-          meltano run tap-mongodb target-jsonl
+      - run: >
+          uv run seed.py
+          --host localhost
+          --port 27017
+          --database ${{ env.DATABASE }}
+          --username ${{ env.USERNAME }}
+          --password ${{ env.PASSWORD }}
+      - run: meltano run tap-mongodb target-jsonl
         env:
           TAP_MONGODB_DATABASE: ${{ env.DATABASE }}
           TAP_MONGODB_MONGODB_CONNECTION_STRING: mongodb://${{ env.USERNAME }}:${{ env.PASSWORD }}@localhost:27017/
