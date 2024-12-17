@@ -5,13 +5,17 @@
 # ]
 # ///
 
+"""Seed the MongoDB database with fake data."""
+
 import argparse
 
 import pymongo
 from faker import Faker
 
 
-class Params(argparse.Namespace):
+class Params(argparse.Namespace):  # pylint: disable=too-few-public-methods
+    """Namespace for command line arguments."""
+
     host: str
     database: str
     username: str
