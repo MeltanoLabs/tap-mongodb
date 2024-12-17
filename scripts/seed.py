@@ -61,13 +61,12 @@ def seed():
     posts.delete_many({})
     for _ in range(1000):
         created_at = fake.date_time_this_decade()
-        updated_at = fake.date_between_dates(created_at)
+        updated_at = fake.date_time_between_dates(created_at)
         posts.insert_one(
             {
                 "title": fake.sentence(),
                 "content": fake.text(),
                 "user_id": fake.random_element(users_oids),
-                # updated_at is always greater than created_at
                 "created_at": created_at,
                 "updated_at": updated_at,
             }
