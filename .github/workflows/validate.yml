@@ -26,11 +26,11 @@ jobs:
           - '3.13'
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Install poetry
         run: pipx install poetry
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: poetry
@@ -39,8 +39,7 @@ jobs:
           poetry env use ${{ matrix.python-version }}
           poetry install
       - name: Run pre-commit checks
-        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
-
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd  # v3.0.1
   smoke-test:
     runs-on: ubuntu-latest
     strategy:
@@ -55,9 +54,9 @@ jobs:
           - '3.13'
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install meltano
@@ -66,7 +65,6 @@ jobs:
         run: meltano install
       - name: Smoke test
         run: meltano invoke tap-mongodb --about
-
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -83,11 +81,11 @@ jobs:
           - '3.12'
           - '3.13'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Install poetry
         run: pipx install poetry
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: poetry
@@ -96,7 +94,7 @@ jobs:
           poetry env use ${{ matrix.python-version }}
           poetry install
       - name: Start MongoDB
-        uses: supercharge/mongodb-github-action@5a87bd81f88e2a8b195f8b7b656f5cda1350815a # 1.11.0
+        uses: supercharge/mongodb-github-action@5a87bd81f88e2a8b195f8b7b656f5cda1350815a  # 1.11.0
         with:
           mongodb-version: ${{ matrix.mongo-version }}
           mongodb-username: admin
@@ -104,7 +102,6 @@ jobs:
           mongodb-db: test
       - name: Test with pytest
         run: poetry run pytest
-
   integration:
     runs-on: ubuntu-latest
     name: Meltano integration test 🐉
@@ -114,23 +111,24 @@ jobs:
       PASSWORD: password
     strategy:
       matrix:
-        mongodb-version: [6.0, 7.0]
-
+        mongodb-version:
+          - '6.0'
+          - '7.0'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Start MongoDB
-        uses: supercharge/mongodb-github-action@5a87bd81f88e2a8b195f8b7b656f5cda1350815a # 1.11.0
+        uses: supercharge/mongodb-github-action@5a87bd81f88e2a8b195f8b7b656f5cda1350815a  # 1.11.0
         with:
           mongodb-version: ${{ matrix.mongodb-version }}
           mongodb-username: ${{ env.USERNAME }}
           mongodb-password: ${{ env.PASSWORD }}
           mongodb-db: ${{ env.DATABASE }}
-      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
-          python-version: '3.x'
-      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+          python-version: 3.x
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a  # v4.2.0
         with:
-          version: ">=0.5"
+          version: '>=0.5'
       - name: Install Meltano
         run: uv tool install meltano
       - run: meltano config meltano set venv.backend uv
