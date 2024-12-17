@@ -21,7 +21,7 @@ class Params(argparse.Namespace):
 
 def seed():
     """Seed the database with fake data.
-    
+
     - users: 100
     - posts: 1000
     """
@@ -43,12 +43,14 @@ def seed():
     users_oids = set()
 
     for _ in range(100):
-        result = users.insert_one({
-            "name": fake.name(),
-            "address": fake.address(),
-            "email": fake.email(),
-            "joined_at": fake.date_time_this_decade(),
-        })
+        result = users.insert_one(
+            {
+                "name": fake.name(),
+                "address": fake.address(),
+                "email": fake.email(),
+                "joined_at": fake.date_time_this_decade(),
+            }
+        )
         users_oids.add(result.inserted_id)
 
     posts = db["posts"]
@@ -56,14 +58,16 @@ def seed():
     for _ in range(1000):
         created_at = fake.date_time_this_decade()
         updated_at = fake.date_between_dates(created_at)
-        posts.insert_one({
-            "title": fake.sentence(),
-            "content": fake.text(),
-            "user_id": fake.random_element(users_oids),
-            # updated_at is always greater than created_at
-            "created_at": created_at,
-            "updated_at": updated_at,
-        })
+        posts.insert_one(
+            {
+                "title": fake.sentence(),
+                "content": fake.text(),
+                "user_id": fake.random_element(users_oids),
+                # updated_at is always greater than created_at
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+        )
 
 
 if __name__ == "__main__":
