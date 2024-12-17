@@ -71,8 +71,7 @@ jobs:
       fail-fast: false
       matrix:
         mongo-version:
-          - 3.6
-          - 4.4
+          - '8.0'
         python-version:
           - '3.8'
           - '3.9'
@@ -80,6 +79,11 @@ jobs:
           - '3.11'
           - '3.12'
           - '3.13'
+        include:
+          - mongo-version: '6.0'
+            python-version: '3.13'
+          - mongo-version: '7.0'
+            python-version: '3.13'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Install poetry
@@ -114,6 +118,7 @@ jobs:
         mongodb-version:
           - '6.0'
           - '7.0'
+          - '8.0'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Start MongoDB
