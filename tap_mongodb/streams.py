@@ -21,8 +21,8 @@ from singer_sdk.helpers._util import utc_now
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED, Stream, TypeConformanceLevel
 
 from tap_mongodb.connector import MongoDBConnector
-from tap_mongodb.tap import sanitize_doc
 from tap_mongodb.types import IncrementalId
+from tap_mongodb.utils import sanitize_doc
 
 DEFAULT_START_DATE: str = "1970-01-01"
 
