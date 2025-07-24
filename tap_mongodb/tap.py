@@ -165,6 +165,13 @@ class TapMongoDB(Tap):
             required=False,
             description="Stream map config. See https://sdk.meltano.com/en/latest/stream_maps.html for documentation.",
         ),
+        th.Property(
+            "sanitize_documents",
+            th.BooleanType,
+            required=False,
+            default=False,
+            description="When True, documents will be sanitized by converting ObjectId, UUID, datetime.datetime to strings, and Binary/bytes to base64-encoded strings.",
+        ),
     ).to_dict()
     config_jsonschema["properties"]["operation_types"]["items"]["enum"] = [
         "create",
