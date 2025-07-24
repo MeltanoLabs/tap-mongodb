@@ -21,6 +21,7 @@ from singer_sdk.helpers._util import utc_now
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED, Stream, TypeConformanceLevel
 
 from tap_mongodb.connector import MongoDBConnector
+from tap_mongodb.tap import sanitize_doc
 from tap_mongodb.types import IncrementalId
 
 DEFAULT_START_DATE: str = "1970-01-01"
@@ -218,10 +219,14 @@ class MongoDBCollectionStream(Stream):
 
                 recursive_replace_empty_in_dict(record)
 
+                # Apply document sanitization if enabled in config
+                # This converts MongoDB-specific types (ObjectId, UUID, datetime, Binary) to JSON-serializable types
+                document_to_use = sanitize_doc(record) if self.config.get("sanitize_documents", False) else record
+
                 parsed_record = {
                     "replication_key": str(incremental_id),
                     "object_id": str(object_id),
-                    "document": record,
+                    "document": document_to_use,
                     "operation_type": None,
                     "cluster_time": None,
                     "namespace": {
@@ -341,10 +346,15 @@ class MongoDBCollectionStream(Stream):
                         # instead. If that is missing, pass None/null to avoid raising an error.
                         document = record.get("fullDocument", record.get("documentKey", None))
                         object_id: Optional[ObjectId] = document["_id"] if "_id" in document else None
+                        
+                        # Apply document sanitization if enabled in config  
+                        # This converts MongoDB-specific types (ObjectId, UUID, datetime, Binary) to JSON-serializable types
+                        document_to_use = sanitize_doc(document) if self.config.get("sanitize_documents", False) else document
+                        
                         parsed_record = {
                             "replication_key": record["_id"]["_data"],
                             "object_id": str(object_id) if object_id is not None else None,
-                            "document": document,
+                            "document": document_to_use,
                             "operation_type": operation_type,
                             "cluster_time": cluster_time.isoformat(),
                             "namespace": {

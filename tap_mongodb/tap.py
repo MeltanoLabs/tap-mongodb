@@ -2,16 +2,71 @@
 
 from __future__ import annotations
 
+import base64
 import json
+from datetime import datetime
 from functools import cached_property
 from typing import Any, Optional
 from urllib.parse import quote_plus
+from uuid import UUID
 
+from bson import Binary, ObjectId
 from singer_sdk import Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
 
 from tap_mongodb.connector import MongoDBConnector
 from tap_mongodb.streams import MongoDBCollectionStream
+
+
+def sanitize_doc(doc: Any) -> Any:
+    """
+    Recursively sanitize a document by converting MongoDB-specific types to JSON-serializable types.
+    
+    This function is used when the 'sanitize_documents' config parameter is enabled to ensure
+    that all MongoDB-specific data types are converted to standard JSON-serializable types
+    before being sent through the Singer pipeline.
+    
+    Type conversions performed:
+    - bson.ObjectId → str (using str() representation)
+    - uuid.UUID → str (using str() representation)  
+    - datetime.datetime → str (using ISO format via isoformat())
+    - bson.Binary → str (base64-encoded string)
+    - bytes → str (base64-encoded string)
+    - dict → recursively sanitized dict
+    - list → recursively sanitized list
+    - All other types → unchanged
+    
+    Args:
+        doc: The document, value, or data structure to sanitize. Can be any type.
+        
+    Returns:
+        The sanitized document with all MongoDB-specific types converted to 
+        JSON-serializable equivalents. The structure is preserved but types
+        are converted as needed.
+        
+    Examples:
+        >>> from bson import ObjectId
+        >>> from datetime import datetime
+        >>> doc = {"_id": ObjectId("507f1f77bcf86cd799439011"), "created": datetime.now()}
+        >>> sanitized = sanitize_doc(doc)
+        >>> # Returns: {"_id": "507f1f77bcf86cd799439011", "created": "2023-01-01T12:00:00"}
+    """
+    if isinstance(doc, ObjectId):
+        return str(doc)
+    elif isinstance(doc, UUID):
+        return str(doc)
+    elif isinstance(doc, datetime):
+        return doc.isoformat()
+    elif isinstance(doc, Binary):
+        return base64.b64encode(doc).decode('utf-8')
+    elif isinstance(doc, bytes):
+        return base64.b64encode(doc).decode('utf-8')
+    elif isinstance(doc, dict):
+        return {key: sanitize_doc(value) for key, value in doc.items()}
+    elif isinstance(doc, list):
+        return [sanitize_doc(item) for item in doc]
+    else:
+        return doc
 
 
 class TapMongoDB(Tap):
@@ -164,6 +219,13 @@ class TapMongoDB(Tap):
             th.ObjectType(),
             required=False,
             description="Stream map config. See https://sdk.meltano.com/en/latest/stream_maps.html for documentation.",
+        ),
+        th.Property(
+            "sanitize_documents",
+            th.BooleanType,
+            required=False,
+            default=False,
+            description="When True, documents will be sanitized by converting ObjectId, UUID, datetime.datetime to strings, and Binary/bytes to base64-encoded strings.",
         ),
     ).to_dict()
     config_jsonschema["properties"]["operation_types"]["items"]["enum"] = [
