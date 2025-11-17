@@ -4,27 +4,13 @@
 # https://help.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
 version: 2
 updates:
-  - package-ecosystem: pip
+  - package-ecosystem: uv
     directory: /
     schedule:
       interval: weekly
       timezone: America/Chicago
-      time: 09:23
-    reviewers:
-      - menzenski
-  - package-ecosystem: pip
-    directory: /.github/workflows
-    schedule:
-      interval: weekly
-      timezone: America/Chicago
-      time: 10:23
-    reviewers:
-      - menzenski
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
       timezone: America/Chicago
-      time: 11:23
-    reviewers:
-      - menzenski
