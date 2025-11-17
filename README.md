@@ -1,7 +1,6 @@
 # tap-mongodb
 
-![validate](https://github.com/MeltanoLabs/tap-mongodb/actions/workflows/validate.yaml/badge.svg)
-
+[![Test tap-mongodb](https://github.com/MeltanoLabs/tap-mongodb/actions/workflows/validate.yml/badge.svg)](https://github.com/MeltanoLabs/tap-mongodb/actions/workflows/validate.yml)
 [![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/format.json)](https://github.com/astral-sh/ruff)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)

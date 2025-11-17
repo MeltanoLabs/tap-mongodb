@@ -71,6 +71,7 @@ extend-select = [
     "G",
     "I",
     "LOG",
+    "PERF",
     "RUF",
     "S",
     "TC",
