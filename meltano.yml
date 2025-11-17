@@ -15,6 +15,7 @@ plugins:
         - discover
         - about
         - stream-maps
+        - structured-logging
       config:
         database: test_database
         mongodb_connection_string: mongodb://admin:password@localhost:27017/

@@ -7,7 +7,7 @@ from typing import Any, TypeAlias
 from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
-from singer_sdk._singerlib.catalog import CatalogEntry, MetadataMapping, Schema
+from singer_sdk.singerlib.catalog import CatalogEntry, MetadataMapping, Schema
 
 from tap_mongodb.schema import SCHEMA
 

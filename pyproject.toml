@@ -11,19 +11,19 @@ keywords = [
     "mongodb",
 ]
 dependencies = [
-    "singer-sdk~=0.42.1",
+    "singer-sdk~=0.52.5",
     "pymongo~=4.4.1",
 ]
 
 [project.optional-dependencies]
-s3 = ["fs-s3fs>=1.1.1,<2"]
+s3 = ["s3fs>=2025.10.0"]
 
 [project.scripts]
 tap-mongodb = "tap_mongodb.tap:TapMongoDB.cli"
 
 [dependency-groups]
 dev = [
-    "faker>=33.1.0,<34",
+    "faker>=38",
     "mypy>=1.0.0",
     "pytest>=9",
     "singer-sdk[testing]",
