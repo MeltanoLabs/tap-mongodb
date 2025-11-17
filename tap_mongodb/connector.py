@@ -2,7 +2,7 @@
 
 from functools import cached_property
 from logging import Logger, getLogger
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, TypeAlias
 
 from pymongo import MongoClient
 from pymongo.database import Database
@@ -11,13 +11,7 @@ from singer_sdk._singerlib.catalog import CatalogEntry, MetadataMapping, Schema
 
 from tap_mongodb.schema import SCHEMA
 
-try:
-    from typing import TypeAlias  # pylint: disable=ungrouped-imports
-
-    MongoVersion: TypeAlias = Tuple[int, int]
-except ImportError:
-    TypeAlias = None
-    MongoVersion = Tuple[int, int]
+MongoVersion: TypeAlias = tuple[int, int]
 
 
 class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
@@ -26,20 +20,20 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
     def __init__(  # pylint: disable=too-many-arguments
         self,
         connection_string: str,
-        options: Dict[str, Any],
+        options: dict[str, Any],
         db_name: str,
         datetime_conversion: str,
-        prefix: Optional[str] = None,
-        collections: Optional[List[str]] = None,
+        prefix: str | None = None,
+        collections: list[str] | None = None,
     ) -> None:
         self._connection_string = connection_string
         self._options = options
         self._db_name = db_name
         self._datetime_conversion: str = datetime_conversion.upper()
-        self._prefix: Optional[str] = prefix
+        self._prefix: str | None = prefix
         self._collections = collections
         self._logger: Logger = getLogger(__name__)
-        self._version: Optional[MongoVersion] = None
+        self._version: MongoVersion | None = None
 
     @cached_property
     def mongo_client(self) -> MongoClient:
@@ -48,8 +42,8 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
             self._connection_string, datetime_conversion=self._datetime_conversion, **self._options
         )
         try:
-            server_info: Dict[str, Any] = client.server_info()
-            version_array: List[int] = server_info["versionArray"]
+            server_info: dict[str, Any] = client.server_info()
+            version_array: list[int] = server_info["versionArray"]
             self._version = (version_array[0], version_array[1])
         except Exception as exception:
             self._logger.exception("Could not connect to MongoDB")
@@ -62,14 +56,14 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         return self.mongo_client[self._db_name]
 
     @property
-    def version(self) -> Optional[MongoVersion]:
+    def version(self) -> MongoVersion | None:
         """Returns the MongoVersion that is being used."""
         return self._version
 
     def get_fully_qualified_name(
         self,
         collection_name: str,
-        prefix: Optional[str] = None,
+        prefix: str | None = None,
         delimiter: str = "_",
     ) -> str:
         """Concatenates a fully qualified name from the parts."""
@@ -105,13 +99,13 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
             replication_key=None,  # Must be defined by user
         )
 
-    def discover_catalog_entries(self) -> List[Dict[str, Any]]:
+    def discover_catalog_entries(self) -> list[dict[str, Any]]:
         """Return a list of catalog entries from discovery.
 
         Returns:
             The discovered catalog entries as a list.
         """
-        result: List[Dict] = []
+        result: list[dict] = []
 
         collections = self.database.list_collection_names(
             authorizedCollections=True,
@@ -139,11 +133,13 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
                 # This is a common case when using a shared cluster
                 # https://docs.mongodb.com/manual/core/security-users/#database-user-privileges
                 self._logger.info(
-                    f"Skipping collection {self.database.name}.{collection}, user does not have permission to it."
+                    "Skipping collection %s.%s, user does not have permission to it.",
+                    self.database.name,
+                    collection,
                 )
                 continue
 
-            self._logger.info(f"Discovered collection {self.database.name}.{collection}")
+            self._logger.info("Discovered collection %s.%s", self.database.name, collection)
             catalog_entry: CatalogEntry = self.discover_catalog_entry(collection)
             result.append(catalog_entry.to_dict())
 

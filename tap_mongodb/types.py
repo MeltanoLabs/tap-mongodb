@@ -2,7 +2,6 @@
 
 import re
 from datetime import datetime
-from typing import Optional
 
 from bson.objectid import ObjectId
 from typing_extensions import Self
@@ -23,13 +22,13 @@ class IncrementalId:
     PATTERN = re.compile(r"^(?P<dt>\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}\+00:00)?)(\|(?P<oid>[a-f0-9]{24}))?$")
 
     # pylint: disable-next=used-before-assignment
-    def __init__(self, datetime_part: datetime, object_id_part: Optional[str] = None) -> None:
+    def __init__(self, datetime_part: datetime, object_id_part: str | None = None) -> None:
         """Initialize the IncrementalId object.
 
         self._object_id is declared as an Optional[str] for backwards compatibility with earlier versions of
         tap-mongodb"""
         self._datetime: datetime = datetime_part
-        self._object_id: Optional[str] = object_id_part
+        self._object_id: str | None = object_id_part
         self._separator: str = "|"
 
     @property
@@ -38,7 +37,7 @@ class IncrementalId:
         return self._datetime
 
     @property
-    def object_id_str(self) -> Optional[str]:
+    def object_id_str(self) -> str | None:
         """Return the ObjectId hex string property of the instance, if it exists."""
         return self._object_id
 

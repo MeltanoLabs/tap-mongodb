@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime
-from typing import Any, Generator, Iterable, Optional
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
-from bson.objectid import ObjectId
 from pymongo import ASCENDING
-from pymongo.collection import Collection
-from pymongo.database import Database
 from pymongo.errors import OperationFailure
-from pymongo.typings import _DocumentType
-from singer_sdk import PluginBase as TapBaseClass
+from singer_sdk import Tap
 from singer_sdk import _singerlib as singer
 from singer_sdk.helpers._catalog import pop_deselected_record_properties
 from singer_sdk.helpers._state import increment_state
@@ -20,8 +16,17 @@ from singer_sdk.helpers._typing import conform_record_data_types
 from singer_sdk.helpers._util import utc_now
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED, Stream, TypeConformanceLevel
 
-from tap_mongodb.connector import MongoDBConnector
 from tap_mongodb.types import IncrementalId
+
+if TYPE_CHECKING:
+    from collections.abc import Generator, Iterable
+
+    from bson.objectid import ObjectId
+    from pymongo.collection import Collection
+    from pymongo.database import Database
+    from pymongo.typings import _DocumentType
+
+    from tap_mongodb.connector import MongoDBConnector
 
 DEFAULT_START_DATE: str = "1970-01-01"
 
@@ -67,7 +72,7 @@ class MongoDBCollectionStream(Stream):
 
     def __init__(
         self,
-        tap: TapBaseClass,
+        tap: Tap,
         catalog_entry: dict,
         connector: MongoDBConnector,
     ) -> None:
@@ -90,7 +95,7 @@ class MongoDBCollectionStream(Stream):
         )
 
     @property
-    def primary_keys(self) -> Optional[list[str]]:
+    def primary_keys(self) -> list[str] | None:
         """If running in log-based replication mode, use the Change Event ID as the primary key. If running instead in
         incremental replication mode, use the document's ObjectId."""
         if self.replication_method == REPLICATION_LOG_BASED:
@@ -101,7 +106,6 @@ class MongoDBCollectionStream(Stream):
     def primary_keys(self, new_value: list[str]) -> None:
         """Set primary keys for the stream."""
         self._primary_keys = new_value
-        return self
 
     @property
     def is_sorted(self) -> bool:
@@ -161,8 +165,6 @@ class MongoDBCollectionStream(Stream):
             check_sorted=self.check_sorted,
         )
 
-        return self
-
     def _generate_record_messages(self, record: dict) -> Generator[singer.RecordMessage, None, None]:
         """Write out a RECORD message.
 
@@ -205,11 +207,11 @@ class MongoDBCollectionStream(Stream):
 
         if self.replication_method == REPLICATION_INCREMENTAL:
             if bookmark:
-                self.logger.debug(f"using existing bookmark: {bookmark}")
+                self.logger.debug("using existing bookmark: %s", bookmark)
                 start_date = to_object_id(bookmark)
             else:
                 start_date_str = self.config.get("start_date", DEFAULT_START_DATE)
-                self.logger.debug(f"no bookmark - using start date: {start_date_str}")
+                self.logger.debug("no bookmark - using start date: %s", start_date_str)
                 start_date = to_object_id(start_date_str)
 
             for record in collection.find({"_id": {"$gt": start_date}}).sort([("_id", ASCENDING)]):
@@ -236,11 +238,11 @@ class MongoDBCollectionStream(Stream):
         elif self.replication_method == REPLICATION_LOG_BASED:
             change_stream_options = {"full_document": "updateLookup"}
             if bookmark is not None and bookmark != DEFAULT_START_DATE:
-                self.logger.debug(f"using bookmark: {bookmark}")
+                self.logger.debug("using bookmark: %s", bookmark)
                 # if on mongo version 4.2 or above, use start_after instead of resume_after, as the former will
                 # gracefully open a new change stream if the resume token's event is not present in the oplog, while
                 # the latter will error in that scenario.
-                if self._connector.version >= (4, 2):
+                if self._connector.version and self._connector.version >= (4, 2):
                     change_stream_options["start_after"] = {"_data": bookmark}
                 else:
                     change_stream_options["resume_after"] = {"_data": bookmark}
@@ -270,7 +272,8 @@ class MongoDBCollectionStream(Stream):
                             f"Unable to enable change streams on collection {collection.name}"
                         ) from operation_failure
                 elif (
-                    self._connector.version < (4, 2)
+                    self._connector.version
+                    and self._connector.version < (4, 2)
                     and operation_failure.code == 286
                     and "as the resume point may no longer be in the oplog." in operation_failure.details["errmsg"]
                 ):
@@ -278,7 +281,7 @@ class MongoDBCollectionStream(Stream):
                     change_stream_options.pop("resume_after", None)
                     change_stream = collection.watch(**change_stream_options)
                 else:
-                    self.logger.critical(f"operation_failure on collection.watch: {operation_failure}")
+                    self.logger.critical("operation_failure on collection.watch: %s", operation_failure)
                     raise operation_failure
 
             except Exception as exception:
@@ -287,7 +290,7 @@ class MongoDBCollectionStream(Stream):
 
             with change_stream:
                 while change_stream.alive and keep_open:
-                    record: Optional[_DocumentType]
+                    record: _DocumentType | None
                     try:
                         record = change_stream.try_next()
                     except OperationFailure as operation_failure:
@@ -297,10 +300,10 @@ class MongoDBCollectionStream(Stream):
                             and "as the resume point may no longer be in the oplog."
                             in operation_failure.details["errmsg"]
                         ):
-                            self.logger.warning(f"operation_failure on try_next: {operation_failure}")
+                            self.logger.warning("operation_failure on try_next: %s", operation_failure)
                             record = None
                         else:
-                            self.logger.critical(f"operation_failure on try_next: {operation_failure}")
+                            self.logger.critical("operation_failure on try_next: %s", operation_failure)
                             raise operation_failure
                     # if we have processed any records, a None record means that we've caught up to the end of the
                     # stream - set keep_open to False so that the change stream is closed and the tap exits.
@@ -340,7 +343,7 @@ class MongoDBCollectionStream(Stream):
                         # fullDocument key is not present on delete events - if it is missing, fall back to documentKey
                         # instead. If that is missing, pass None/null to avoid raising an error.
                         document = record.get("fullDocument", record.get("documentKey", None))
-                        object_id: Optional[ObjectId] = document["_id"] if "_id" in document else None
+                        object_id: ObjectId | None = document["_id"] if "_id" in document else None
                         parsed_record = {
                             "replication_key": record["_id"]["_data"],
                             "object_id": str(object_id) if object_id is not None else None,
@@ -354,7 +357,7 @@ class MongoDBCollectionStream(Stream):
                         }
                         if should_add_metadata:
                             parsed_record["_sdc_extracted_at"] = cluster_time
-                            parsed_record["_sdc_batched_at"] = datetime.utcnow()
+                            parsed_record["_sdc_batched_at"] = datetime.now(timezone.utc)
                             if operation_type == "delete":
                                 parsed_record["_sdc_deleted_at"] = cluster_time
                         yield parsed_record
