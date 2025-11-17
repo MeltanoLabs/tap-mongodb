@@ -1571,7 +1571,6 @@ wheels = [
 
 [[package]]
 name = "tap-mongodb"
-version = "2.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "pymongo" },
