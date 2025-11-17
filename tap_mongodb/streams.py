@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from pymongo import ASCENDING
 from pymongo.errors import OperationFailure
 from singer_sdk import Tap
-from singer_sdk import _singerlib as singer
+from singer_sdk import singerlib as singer
 from singer_sdk.helpers._catalog import pop_deselected_record_properties
 from singer_sdk.helpers._state import increment_state
 from singer_sdk.helpers._typing import conform_record_data_types
