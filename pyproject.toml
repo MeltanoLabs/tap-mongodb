@@ -1,54 +1,47 @@
-[tool.poetry]
+[project]
 name = "tap-mongodb"
 version = "2.5.0"
-description = "`tap-mongodb` is a Singer tap for MongoDB and AWS DocumentDB, built with the Meltano Singer SDK."
+description = "Singer tap for MongoDB and AWS DocumentDB, built with the Meltano Singer SDK."
+authors = [{ name = "Matt Menzenski" }]
+requires-python = ">=3.10"
 readme = "README.md"
-authors = ["Matt Menzenski"]
+license = "Apache-2.0"
 keywords = [
     "ELT",
     "mongodb",
 ]
-license = "Apache 2.0"
-packages = [
-    { include = "tap_mongodb" },
+dependencies = [
+    "singer-sdk~=0.42.1",
+    "pymongo~=4.4.1",
 ]
 
-[tool.poetry.dependencies]
-python = "^3.8"
-singer-sdk = { version = "^0.42.1" }
-fs-s3fs = { version = "^1.1.1", optional = true }
-pymongo = "^4.4.1"
+[project.optional-dependencies]
+s3 = ["fs-s3fs>=1.1.1,<2"]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.3.1"
-flake8 = "^5.0.4"
-darglint = "^1.8.1"
-black = "^23.1.0"
-pyupgrade = "^3.3.1"
-mypy = "^1.0.0"
-isort = "^5.11.5"
-singer-sdk = { version = "^0.42.1", extras = ["testing"] }
-pylint = "^3.0.0a6"
-faker = "^33.1.0"
+[project.scripts]
+tap-mongodb = "tap_mongodb.tap:TapMongoDB.cli"
 
-[tool.poetry.extras]
-s3 = ["fs-s3fs"]
+[dependency-groups]
+dev = [
+    "faker>=33.1.0,<34",
+    "mypy>=1.0.0",
+    "pytest>=9",
+    "singer-sdk[testing]",
+    "ruff>=0.14.5",
+]
 
-[tool.mypy]
-python_version = "3.9"
-warn_unused_configs = true
+[tool.hatch.build.targets.sdist]
+include = ["tap_mongodb"]
+
+[tool.hatch.build.targets.wheel]
+include = ["tap_mongodb"]
 
 [build-system]
-requires = ["poetry-core>=1.0.8"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.black]
-line-length = 120
-target-version = ['py311']
-
-[tool.poetry.scripts]
-# CLI declaration
-tap-mongodb = 'tap_mongodb.tap:TapMongoDB.cli'
+[tool.mypy]
+warn_unused_configs = true
 
 [tool.yamlfix]
 comments_min_spaces_from_content = 2
@@ -63,29 +56,41 @@ quote_basic_values = false
 quote_keys_and_basic_values = false
 
 [tool.ruff]
-select = [
+line-length = 120
+
+[tool.ruff.lint]
+extend-select = [
+    "A",
+    "B",
+    "C4",
     "E",
     "F",
+    "FURB",
+    "G",
+    "I",
+    "LOG",
     "RUF",
-    "I001",
+    "S",
+    "TC",
+    "UP",
 ]
 exclude = [
     ".meltano",
     ".secrets",
     "output",
 ]
-line-length = 120
-target-version = "py311"
 
-[tool.ruff.isort]
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+
+[tool.ruff.lint.isort]
 known-third-party = [
     "pymongo",
     "singer_sdk",
 ]
 
-[tool.pylint]
-max-line-length = 120
-
-disable = [
-    "logging-fstring-interpolation"
+[tool.pytest]
+minversion = "9.0"
+addopts = [
+    "-v",
 ]
