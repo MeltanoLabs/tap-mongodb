@@ -1,6 +1,13 @@
+[build-system]
+requires = [
+    "hatchling>=1.27,<2",
+    "hatch-vcs>=0.5.0,<1",
+]
+build-backend = "hatchling.build"
+
 [project]
 name = "tap-mongodb"
-version = "2.5.0"
+dynamic = [ "version" ]
 description = "Singer tap for MongoDB and AWS DocumentDB, built with the Meltano Singer SDK."
 authors = [{ name = "Matt Menzenski" }]
 maintainers = [{ name = "Meltano Labs" }]
@@ -33,14 +40,14 @@ dev = [
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["tap_mongodb"]
+include = ["tap_mongodb", "tests"]
 
 [tool.hatch.build.targets.wheel]
 include = ["tap_mongodb"]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.hatch.version]
+fallback-version = "2.5.0"
+source = "vcs"
 
 [tool.mypy]
 warn_unused_configs = true
@@ -84,7 +91,7 @@ exclude = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101"]
+"tests/**/*.py" = ["ANN", "S101"]
 
 [tool.ruff.lint.isort]
 known-third-party = [

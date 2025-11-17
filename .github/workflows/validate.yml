@@ -3,7 +3,19 @@ on:
   push:
     branches:
       - main
+    paths:
+      - .github/workflows/validate.yml
+      - tap_mongodb/**
+      - tests/**
+      - pyproject.toml
+      - uv.lock
   pull_request:
+    paths:
+      - .github/workflows/validate.yml
+      - tap_mongodb/**
+      - tests/**
+      - pyproject.toml
+      - uv.lock
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
