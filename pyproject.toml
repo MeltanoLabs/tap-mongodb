@@ -3,9 +3,11 @@ name = "tap-mongodb"
 version = "2.5.0"
 description = "Singer tap for MongoDB and AWS DocumentDB, built with the Meltano Singer SDK."
 authors = [{ name = "Matt Menzenski" }]
+maintainers = [{ name = "Meltano Labs" }]
 requires-python = ">=3.10"
 readme = "README.md"
 license = "Apache-2.0"
+license-files = [ "LICENSE" ]
 keywords = [
     "ELT",
     "mongodb",

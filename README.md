@@ -2,8 +2,9 @@
 
 ![validate](https://github.com/MeltanoLabs/tap-mongodb/actions/workflows/validate.yaml/badge.svg)
 
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/charliermarsh/ruff/main/assets/badge/v1.json)](https://github.com/charliermarsh/ruff)
+[![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/format.json)](https://github.com/astral-sh/ruff)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
 `tap-mongodb` is a Singer tap for extracting data from a [MongoDB](https://www.mongodb.com/)
 or [AWS DocumentDB](https://aws.amazon.com/documentdb/) database. The tap supports extracting records from the database
@@ -18,6 +19,10 @@ Install from GitHub:
 
 ```bash
 pipx install git+https://github.com/MeltanoLabs/tap-mongodb.git@main
+
+# or
+
+uv tool install git+https://github.com/MeltanoLabs/tap-mongodb.git@main
 ```
 
 ## Configuration
@@ -99,8 +104,7 @@ Follow these instructions to contribute to this project.
 ### Initialize your Development Environment
 
 ```bash
-pipx install poetry
-poetry install
+uv sync
 ```
 
 ### Create and Run Tests
@@ -108,13 +112,13 @@ poetry install
 Create tests within the `tap_mongodb/tests` subfolder and then run:
 
 ```bash
-poetry run pytest
+uv run pytest
 ```
 
-You can also test the `tap-mongodb` CLI interface directly using `poetry run`:
+You can also test the `tap-mongodb` CLI interface directly using `uv run`:
 
 ```bash
-poetry run tap-mongodb --help
+uv run tap-mongodb --help
 ```
 
 ### Testing with [Meltano](https://www.meltano.com)
@@ -126,10 +130,7 @@ Next, install Meltano (if you haven't already) and any needed plugins:
 
 ```bash
 # Install meltano
-pipx install meltano
-# Initialize meltano within this directory
-cd tap-mongodb
-meltano install
+uv tool install meltano
 ```
 
 Now you can test and orchestrate using Meltano:
@@ -137,7 +138,8 @@ Now you can test and orchestrate using Meltano:
 ```bash
 # Test invocation:
 meltano invoke tap-mongodb --version
-# OR run a test `elt` pipeline:
+
+# OR run a test EL pipeline:
 meltano run tap-mongodb target-jsonl
 ```
 
