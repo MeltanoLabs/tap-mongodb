@@ -1,0 +1,105 @@
+services:
+  # Primary MongoDB node
+  mongodb-primary:
+    image: mongo:7.0
+    container_name: mongodb-primary
+    hostname: mongodb-primary
+    ports:
+      - 27017:27017
+    volumes:
+      - mongodb-primary-data:/data/db
+    command:
+      - --replSet
+      - rs0
+      - --bind_ip_all
+    networks:
+      - mongodb-network
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --eval
+        - db.adminCommand('ping')
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Secondary MongoDB node 1
+  mongodb-secondary1:
+    image: mongo:7.0
+    container_name: mongodb-secondary1
+    hostname: mongodb-secondary1
+    ports:
+      - 27018:27017
+    volumes:
+      - mongodb-secondary1-data:/data/db
+    command:
+      - --replSet
+      - rs0
+      - --bind_ip_all
+    networks:
+      - mongodb-network
+    depends_on:
+      - mongodb-primary
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --eval
+        - db.adminCommand('ping')
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Secondary MongoDB node 2
+  mongodb-secondary2:
+    image: mongo:7.0
+    container_name: mongodb-secondary2
+    hostname: mongodb-secondary2
+    ports:
+      - 27019:27017
+    volumes:
+      - mongodb-secondary2-data:/data/db
+    command:
+      - --replSet
+      - rs0
+      - --bind_ip_all
+    networks:
+      - mongodb-network
+    depends_on:
+      - mongodb-primary
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --eval
+        - db.adminCommand('ping')
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Replica set initialization helper
+  mongodb-init:
+    image: mongo:7.0
+    container_name: mongodb-init
+    networks:
+      - mongodb-network
+    depends_on:
+      mongodb-primary:
+        condition: service_healthy
+      mongodb-secondary1:
+        condition: service_healthy
+      mongodb-secondary2:
+        condition: service_healthy
+    volumes:
+      - ./docker/init-replica-set.sh:/init-replica-set.sh:ro
+    entrypoint:
+      - /bin/bash
+      - /init-replica-set.sh
+networks:
+  mongodb-network:
+    driver: bridge
+volumes:
+  mongodb-primary-data:
+  mongodb-secondary1-data:
+  mongodb-secondary2-data:

@@ -1,0 +1,396 @@
+{
+  "streams": [
+    {
+      "key_properties": [
+        "replication_key"
+      ],
+      "metadata": [
+        {
+          "breadcrumb": [
+            "properties",
+            "cluster_time"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "document"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "namespace"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "namespace",
+            "properties",
+            "database"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "namespace",
+            "properties",
+            "collection"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "object_id"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "operation_type"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "replication_key"
+          ],
+          "metadata": {
+            "inclusion": "automatic"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "_sdc_batched_at"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "_sdc_extracted_at"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [],
+          "metadata": {
+            "inclusion": "available",
+            "replication-method": "LOG_BASED",
+            "selected": true,
+            "table-key-properties": [
+              "replication_key"
+            ]
+          }
+        }
+      ],
+      "schema": {
+        "properties": {
+          "_sdc_batched_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "_sdc_extracted_at": {
+            "description": "Timestamp representing the time that a record was extracted from the database.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cluster_time": {
+            "description": "MongoDB/Document cluster time of a change stream message, when tap is running in log-based replication mode. When tap is running in incremental mode, this is null.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "document": {
+            "additionalProperties": true,
+            "description": "The document from the collection",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "namespace": {
+            "additionalProperties": false,
+            "description": "MongoDB namespace of the record, indicating database name and collection name.",
+            "properties": {
+              "collection": {
+                "description": "Name of the MongoDB/DocumentDB collection from which this record was extracted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "database": {
+                "description": "Name of the MongoDB/DocumentDB database from which this record was extracted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "object_id": {
+            "description": "ObjectId ID of the record. 24 character hex string.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operation_type": {
+            "description": "MongoDB namespace, indicating database name and collection name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replication_key": {
+            "description": "Replication key which uniquely identifies one record.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "stream": "users",
+      "table_name": "users",
+      "tap_stream_id": "users"
+    },
+    {
+      "key_properties": [
+        "replication_key"
+      ],
+      "metadata": [
+        {
+          "breadcrumb": [
+            "properties",
+            "cluster_time"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "document"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "namespace"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "namespace",
+            "properties",
+            "database"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "namespace",
+            "properties",
+            "collection"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "object_id"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "operation_type"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "replication_key"
+          ],
+          "metadata": {
+            "inclusion": "automatic"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "_sdc_batched_at"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [
+            "properties",
+            "_sdc_extracted_at"
+          ],
+          "metadata": {
+            "inclusion": "available"
+          }
+        },
+        {
+          "breadcrumb": [],
+          "metadata": {
+            "inclusion": "available",
+            "replication-method": "LOG_BASED",
+            "selected": true,
+            "table-key-properties": [
+              "replication_key"
+            ]
+          }
+        }
+      ],
+      "schema": {
+        "properties": {
+          "_sdc_batched_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "_sdc_extracted_at": {
+            "description": "Timestamp representing the time that a record was extracted from the database.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cluster_time": {
+            "description": "MongoDB/Document cluster time of a change stream message, when tap is running in log-based replication mode. When tap is running in incremental mode, this is null.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "document": {
+            "additionalProperties": true,
+            "description": "The document from the collection",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "namespace": {
+            "additionalProperties": false,
+            "description": "MongoDB namespace of the record, indicating database name and collection name.",
+            "properties": {
+              "collection": {
+                "description": "Name of the MongoDB/DocumentDB collection from which this record was extracted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "database": {
+                "description": "Name of the MongoDB/DocumentDB database from which this record was extracted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "object_id": {
+            "description": "ObjectId ID of the record. 24 character hex string.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operation_type": {
+            "description": "MongoDB namespace, indicating database name and collection name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replication_key": {
+            "description": "Replication key which uniquely identifies one record.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "stream": "posts",
+      "table_name": "posts",
+      "tap_stream_id": "posts"
+    }
+  ]
+}

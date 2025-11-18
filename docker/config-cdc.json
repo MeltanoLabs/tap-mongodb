@@ -1,0 +1,13 @@
+{
+  "add_record_metadata": true,
+  "database": "test",
+  "mongodb_connection_string": "mongodb://localhost:27017/?replicaSet=rs0&directConnection=true",
+  "operation_types": [
+    "insert",
+    "update",
+    "replace",
+    "delete"
+  ],
+  "stream_map_config": {},
+  "stream_maps": {}
+}
