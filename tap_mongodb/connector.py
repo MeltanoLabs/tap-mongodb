@@ -47,7 +47,8 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
             self._version = (version_array[0], version_array[1])
         except Exception as exception:
             self._logger.exception("Could not connect to MongoDB")
-            raise RuntimeError("Could not connect to MongoDB") from exception
+            msg = "Could not connect to MongoDB"
+            raise RuntimeError(msg) from exception
         return client
 
     @property

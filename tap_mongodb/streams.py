@@ -149,10 +149,11 @@ class MongoDBCollectionStream(Stream):
             raise ValueError(msg)
 
         if not self.replication_key:
-            raise ValueError(
+            msg = (
                 f"Could not detect replication key for '{self.name}' stream"
-                f"(replication method={self.replication_method})",
+                f"(replication method={self.replication_method})"
             )
+            raise ValueError(msg)
         treat_as_sorted = self.is_sorted
         if not treat_as_sorted and self.state_partitioning_keys is not None:
             # Streams with custom state partitioning are not resumable.
@@ -194,7 +195,10 @@ class MongoDBCollectionStream(Stream):
             # Emit record if not filtered
             if mapped_record is not None:
                 record_message = singer.RecordMessage(
-                    stream=stream_map.stream_alias, record=mapped_record, version=None, time_extracted=extracted_at
+                    stream=stream_map.stream_alias,
+                    record=mapped_record,
+                    version=None,
+                    time_extracted=extracted_at,
                 )
                 yield record_message
 
@@ -268,9 +272,8 @@ class MongoDBCollectionStream(Stream):
                     if result and result["ok"]:
                         change_stream = collection.watch(**change_stream_options)
                     else:
-                        raise RuntimeError(
-                            f"Unable to enable change streams on collection {collection.name}"
-                        ) from operation_failure
+                        msg = f"Unable to enable change streams on collection {collection.name}"
+                        raise RuntimeError(msg) from operation_failure
                 elif (
                     self._connector.version
                     and self._connector.version < (4, 2)
@@ -282,11 +285,11 @@ class MongoDBCollectionStream(Stream):
                     change_stream = collection.watch(**change_stream_options)
                 else:
                     self.logger.critical("operation_failure on collection.watch: %s", operation_failure)
-                    raise operation_failure
+                    raise
 
             except Exception as exception:
                 self.logger.critical(exception)
-                raise exception
+                raise
 
             with change_stream:
                 while change_stream.alive and keep_open:
@@ -304,7 +307,7 @@ class MongoDBCollectionStream(Stream):
                             record = None
                         else:
                             self.logger.critical("operation_failure on try_next: %s", operation_failure)
-                            raise operation_failure
+                            raise
                     # if we have processed any records, a None record means that we've caught up to the end of the
                     # stream - set keep_open to False so that the change stream is closed and the tap exits.
                     # if no records have been processed, a None record means that there has been no activity in the

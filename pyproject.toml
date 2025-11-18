@@ -82,6 +82,7 @@ extend-select = [
     "RUF",
     "S",
     "TC",
+    "TRY",
     "UP",
 ]
 exclude = [

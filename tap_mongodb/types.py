@@ -62,7 +62,8 @@ class IncrementalId:
         """Create an IncrementalId instance from a string."""
         matched: re.Match = re.match(IncrementalId.PATTERN, id_string)
         if not matched:
-            raise ValueError("Invalid IncrementalId string")
+            msg = "Invalid IncrementalId string"
+            raise ValueError(msg)
         datetime_part = datetime.fromisoformat(matched["dt"])
         object_id_part = matched["oid"] if matched["oid"] else None
         return IncrementalId(datetime_part, object_id_part)
@@ -71,7 +72,8 @@ class IncrementalId:
     def from_object_id(cls, object_id: ObjectId) -> Self:
         """Create an IncrementalId instance from a BSON ObjectId."""
         if object_id is None:
-            raise ValueError("ObjectId argument cannot be None")
+            msg = "ObjectId argument cannot be None"
+            raise ValueError(msg)
         datetime_part = object_id.generation_time
         object_id_part = str(object_id)
         return IncrementalId(datetime_part, object_id_part)
