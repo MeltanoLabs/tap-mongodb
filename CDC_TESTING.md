@@ -14,6 +14,8 @@ Change streams capture the complete document state along with operation metadata
 
 ## Quick Start with Meltano
 
+The main `meltano.yml` includes a CDC variant (`tap-mongodb-cdc`) that uses LOG_BASED replication.
+
 1. **Start the MongoDB replica set:**
    ```bash
    docker compose up -d
@@ -31,62 +33,50 @@ Change streams capture the complete document state along with operation metadata
    uv run docker/seed-cdc-test-data.py
    ```
 
-4. **Configure Meltano for CDC:**
+4. **Install the CDC plugin:**
    ```bash
-   # Set connection to local MongoDB replica set
-   meltano config tap-mongodb set mongodb_connection_string "mongodb://localhost:27017/?replicaSet=rs0&directConnection=true"
-   meltano config tap-mongodb set database test
+   meltano install extractor tap-mongodb-cdc
    ```
 
-5. **Edit `meltano.yml` to enable LOG_BASED replication:**
-
-   Add this to the `metadata` section under `tap-mongodb`:
-   ```yaml
-   plugins:
-     extractors:
-       - name: tap-mongodb
-         # ... other config ...
-         metadata:
-           'users':
-             replication-method: LOG_BASED
-           'posts':
-             replication-method: LOG_BASED
-   ```
-
-6. **Run initial sync:**
+5. **Run initial sync:**
    ```bash
-   meltano run tap-mongodb target-jsonl
+   meltano run tap-mongodb-cdc target-jsonl
    ```
 
-   This captures the initial state and establishes the change stream position.
+   This establishes the change stream position. The tap will wait for events.
+   Press Ctrl+C after a few seconds if no events occur.
 
-7. **Simulate CDC events:**
+6. **Simulate CDC events:**
    ```bash
    uv run docker/seed-cdc-test-data.py --simulate-changes
    ```
 
-8. **Capture changes with incremental sync:**
+7. **Capture changes with incremental sync:**
    ```bash
-   meltano run tap-mongodb target-jsonl
+   meltano run tap-mongodb-cdc target-jsonl
    ```
 
-9. **View captured CDC events:**
+8. **View captured CDC events:**
    ```bash
-   # Check the output file
+   # Count by operation type
    grep '"operation_type"' output/*.jsonl | \
-     sed 's/.*"operation_type":"\([^"]*\)".*/\1/' | sort | uniq -c
+     sed 's/.*"operation_type": "\([^"]*\)".*/\1/' | sort | uniq -c
+
+   # View a sample insert
+   grep '"insert"' output/users.jsonl | head -1 | jq '.'
    ```
 
 ## What's Included
 
 ```
-compose.yml                    # 3-node MongoDB replica set (root)
+compose.yml                              # 3-node MongoDB replica set (root)
+meltano.yml                              # Includes tap-mongodb-cdc plugin for CDC testing
 docker/
-├── README.md                  # Detailed documentation
-├── IMPORTANT.md              # Notes about catalog complexity
-├── config-cdc.json           # tap-mongodb CDC configuration
-├── seed-cdc-test-data.py     # Data seeding and CDC simulation
-└── init-replica-set.sh       # Replica set initialization
+├── README.md                            # Detailed documentation
+├── IMPORTANT.md                         # Notes about catalog complexity
+├── config-cdc.json                      # tap-mongodb CDC configuration
+├── seed-cdc-test-data.py                # Data seeding and CDC simulation
+└── init-replica-set.sh                  # Replica set initialization
 ```
 
 ## Key Features
@@ -152,18 +142,17 @@ docker compose up -d && sleep 30
 # 2. Seed initial data
 uv run docker/seed-cdc-test-data.py
 
-# 3. Configure Meltano
-meltano config tap-mongodb set mongodb_connection_string "mongodb://localhost:27017/?replicaSet=rs0&directConnection=true"
-meltano config tap-mongodb set database test
+# 3. Install CDC plugin
+meltano install extractor tap-mongodb-cdc
 
-# 4. Initial sync (edit meltano.yml first to set LOG_BASED replication)
-meltano run tap-mongodb target-jsonl
+# 4. Initial sync
+meltano run tap-mongodb-cdc target-jsonl
 
 # 5. Simulate CDC events
 uv run docker/seed-cdc-test-data.py --simulate-changes
 
 # 6. Capture changes
-meltano run tap-mongodb target-jsonl
+meltano run tap-mongodb-cdc target-jsonl
 
 # 7. View operation types
 grep '"operation_type"' output/*.jsonl | sed 's/.*"operation_type":"\([^"]*\)".*/\1/' | sort | uniq -c
