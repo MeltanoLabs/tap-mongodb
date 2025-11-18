@@ -252,6 +252,7 @@ class MongoDBCollectionStream(Stream):
                     change_stream_options["resume_after"] = {"_data": bookmark}
             operation_types_allowlist: set = set(self.config.get("operation_types"))
             has_seen_a_record: bool = False
+            has_yielded_dummy_record: bool = False
             keep_open: bool = True
 
             try:
@@ -319,7 +320,12 @@ class MongoDBCollectionStream(Stream):
                     #    then yield that record (whose _id is set to the change stream's resume token, so that the
                     #    change stream can be resumed from this point by a later running of the tap).
                     #  - If a change stream is opened and there is at least one record, yield all records
-                    if record is None and not has_seen_a_record and change_stream.resume_token is not None:
+                    if (
+                        record is None
+                        and not has_seen_a_record
+                        and not has_yielded_dummy_record
+                        and change_stream.resume_token is not None
+                    ):
                         # if we're in this block, we're in MongoDB specifically - DocumentDB will have a None resume
                         # token here. If we take no action, the tap will remain open and idle until a message appears
                         # in the change stream, then it will yield that record and close. That's not ideal because it
@@ -334,7 +340,7 @@ class MongoDBCollectionStream(Stream):
                             "cluster_time": None,
                             "namespace": None,
                         }
-                        has_seen_a_record = True
+                        has_yielded_dummy_record = True
 
                     if record is None and has_seen_a_record:
                         keep_open = False
