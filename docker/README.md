@@ -28,9 +28,9 @@ meltano run tap-mongodb-cdc target-jsonl
 
 ## Files
 
-- `config-cdc.json` - tap-mongodb configuration for CDC
-- `seed-cdc-test-data.py` - Data seeding and CDC event simulation
-- `init-replica-set.sh` - Replica set initialization script
+- `seed-cdc-test-data.py` - Data seeding and CDC event simulation script
+- `init-replica-set.sh` - Replica set initialization script (auto-run by Docker)
+- `init-replica-set.js` - MongoDB replica set configuration
 
 ## Architecture
 
