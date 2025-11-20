@@ -2,11 +2,12 @@ extends: default
 yaml-files:
   - '*.yaml'
   - '*.yml'
-ignore: |
-  venv/
-  .meltano/
-  src/transform/dbt_packages/
-  argo/out/
+ignore:
+  - '*meltano.yml'
+  - venv/
+  - .meltano/
+  - src/transform/dbt_packages/
+  - argo/out/
 rules:
   brackets:
     forbid: non-empty
