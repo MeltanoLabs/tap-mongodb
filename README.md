@@ -204,7 +204,7 @@ Each CDC record includes:
 uv run docker/seed-cdc-test-data.py
 
 # Run initial sync to establish change stream position
-meltano run tap-mongodb-cdc target-jsonl
+meltano run --full-refresh tap-mongodb-cdc target-jsonl
 
 # Simulate CDC events (inserts, updates, deletes, replaces)
 uv run docker/seed-cdc-test-data.py --simulate-changes
