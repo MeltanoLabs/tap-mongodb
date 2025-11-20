@@ -2,6 +2,8 @@
 
 This repository includes a standalone plugin definition file (`tap-mongodb.yml`) that can be used to add tap-mongodb to any Meltano project using `meltano add --from-ref`.
 
+**For complete CDC documentation, see the main [README.md](README.md#change-data-capture-log_based-mode).**
+
 ## Usage
 
 ### Adding tap-mongodb from URL

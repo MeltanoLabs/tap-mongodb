@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -205,9 +206,16 @@ class MongoDBCollectionStream(Stream):
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
         # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-        bookmark: str = self.get_starting_replication_key_value(context)
+        bookmark: str | None = self.get_starting_replication_key_value(context)
         should_add_metadata: bool = self.config.get("add_record_metadata", False)
         collection: Collection = self._connector.database[self._collection_name]
+        self.logger.info(
+            "replication method: %s, bookmark: %s, context: %s",
+            self.replication_method,
+            bookmark,
+            context,
+        )
+        self.logger.info("state: %s", self.get_context_state(context))
 
         if self.replication_method == REPLICATION_INCREMENTAL:
             if bookmark:
@@ -236,13 +244,13 @@ class MongoDBCollectionStream(Stream):
                     },
                 }
                 if should_add_metadata:
-                    parsed_record["_sdc_batched_at"] = datetime.utcnow()
+                    parsed_record["_sdc_batched_at"] = datetime.now(timezone.utc)
                 yield parsed_record
 
         elif self.replication_method == REPLICATION_LOG_BASED:
             change_stream_options = {"full_document": "updateLookup"}
             if bookmark is not None and bookmark != DEFAULT_START_DATE:
-                self.logger.debug("using bookmark: %s", bookmark)
+                self.logger.info("using bookmark: %s", bookmark)
                 # if on mongo version 4.2 or above, use start_after instead of resume_after, as the former will
                 # gracefully open a new change stream if the resume token's event is not present in the oplog, while
                 # the latter will error in that scenario.
@@ -254,6 +262,8 @@ class MongoDBCollectionStream(Stream):
             has_seen_a_record: bool = False
             has_yielded_dummy_record: bool = False
             keep_open: bool = True
+            idle_timeout_seconds: float = 10.0
+            last_record_time: float = time.time()
 
             try:
                 change_stream = collection.watch(**change_stream_options)
@@ -293,10 +303,31 @@ class MongoDBCollectionStream(Stream):
                 raise
 
             with change_stream:
+                self.logger.info(
+                    "change_stream.alive: %s, keep_open: %s, resume_token: %s",
+                    change_stream.alive,
+                    keep_open,
+                    change_stream.resume_token,
+                )
                 while change_stream.alive and keep_open:
+                    # Check for idle timeout
+                    current_time = time.time()
+                    idle_duration = current_time - last_record_time
+                    if idle_duration >= idle_timeout_seconds:
+                        self.logger.info(
+                            "Change stream idle for %.1f seconds (timeout: %.1f seconds). Ending stream.",
+                            idle_duration,
+                            idle_timeout_seconds,
+                        )
+                        keep_open = False
+                        break
+
                     record: _DocumentType | None
                     try:
                         record = change_stream.try_next()
+                        # Add small sleep to prevent CPU spinning while polling
+                        if record is None:
+                            time.sleep(0.1)
                     except OperationFailure as operation_failure:
                         if (
                             self._connector.version < (4, 2)
@@ -342,9 +373,12 @@ class MongoDBCollectionStream(Stream):
                         }
                         has_yielded_dummy_record = True
 
-                    if record is None and has_seen_a_record:
+                    if record is None and (has_yielded_dummy_record or has_seen_a_record):
                         keep_open = False
                     if record is not None:
+                        # Reset idle timer when we receive a record
+                        last_record_time = time.time()
+
                         operation_type = record["operationType"]
                         if operation_type not in operation_types_allowlist:
                             continue
@@ -352,7 +386,9 @@ class MongoDBCollectionStream(Stream):
                         # fullDocument key is not present on delete events - if it is missing, fall back to documentKey
                         # instead. If that is missing, pass None/null to avoid raising an error.
                         document = record.get("fullDocument", record.get("documentKey", None))
-                        object_id: ObjectId | None = document["_id"] if "_id" in document else None
+                        object_id: ObjectId | None = (
+                            document["_id"] if document is not None and "_id" in document else None
+                        )
                         parsed_record = {
                             "replication_key": record["_id"]["_data"],
                             "object_id": str(object_id) if object_id is not None else None,

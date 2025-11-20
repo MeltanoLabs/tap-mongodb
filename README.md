@@ -6,11 +6,26 @@
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
 `tap-mongodb` is a Singer tap for extracting data from a [MongoDB](https://www.mongodb.com/)
-or [AWS DocumentDB](https://aws.amazon.com/documentdb/) database. The tap supports extracting records from the database
-directly (incremental replication mode, the default) and also supports extracting change events from the database's
-Change Stream API (in log-based replication mode).
+or [AWS DocumentDB](https://aws.amazon.com/documentdb/) database.
 
 Built with the [Meltano Tap SDK](https://sdk.meltano.com) for Singer Taps.
+
+## Replication Modes
+
+The tap supports two replication modes:
+
+### 1. **INCREMENTAL** (Default)
+- Extracts records directly from collections
+- Uses `_id` field as replication key
+- Suitable for regular MongoDB instances
+- No special infrastructure required
+
+### 2. **LOG_BASED** (CDC - Change Data Capture)
+- Captures change events via MongoDB Change Streams
+- Tracks insert, update, replace, and delete operations
+- Requires MongoDB replica set or sharded cluster
+- Includes operation metadata, cluster timestamps, and full document state
+- Automatically exits after 10 seconds of inactivity (production-ready)
 
 ## Installation
 
@@ -95,6 +110,216 @@ tap-mongodb --version
 tap-mongodb --help
 tap-mongodb --config CONFIG --discover > ./catalog.json
 ```
+
+## Change Data Capture (LOG_BASED Mode)
+
+The tap supports real-time change data capture using MongoDB Change Streams. This mode captures insert, update, replace, and delete operations as they occur.
+
+### Requirements
+
+- **MongoDB**: Replica set (3+ nodes) or sharded cluster
+- **AWS DocumentDB**: Cluster mode with change streams enabled
+- **Permissions**: `find` and `changeStream` permissions on collections
+
+### Quick Start with Meltano
+
+This repository includes a complete Docker-based testing setup with a 3-node MongoDB replica set.
+
+#### 1. Start MongoDB Replica Set
+
+```bash
+# Start 3-node replica set
+docker compose up -d
+
+# Wait for initialization (30-45 seconds)
+docker compose ps
+docker exec mongodb-primary mongosh --eval "rs.status()" --quiet
+```
+
+#### 2. Configure CDC Plugin
+
+The `meltano.yml` includes a pre-configured CDC plugin that inherits from the base tap:
+
+```yaml
+- name: tap-mongodb-cdc
+  inherit_from: tap-mongodb
+  config:
+    database: test
+    mongodb_connection_string: mongodb://localhost:27017/?replicaSet=rs0&directConnection=true
+  metadata:
+    '*':
+      replication-method: LOG_BASED
+      replication-key: replication_key
+```
+
+#### 3. Run CDC Sync
+
+```bash
+# Install the CDC plugin (first time only)
+meltano install extractor tap-mongodb-cdc
+
+# Run CDC sync
+meltano run tap-mongodb-cdc target-jsonl
+```
+
+The tap will:
+1. Open a change stream for each collection
+2. Yield a resume token to track position
+3. Process any existing change events
+4. Automatically exit after 10 seconds of inactivity
+
+### CDC Output Format
+
+Each CDC record includes:
+
+```json
+{
+  "operation_type": "insert",
+  "cluster_time": "2025-11-19T20:28:33+00:00",
+  "namespace": {
+    "database": "test",
+    "collection": "users"
+  },
+  "document": {
+    "_id": "...",
+    "name": "John Doe",
+    "email": "john@example.com"
+  },
+  "replication_key": "82691E3EFE000000012B0429296E1404"
+}
+```
+
+**Operation Types:**
+- `insert` - New documents created (includes full document)
+- `update` - Documents modified (includes full document via updateLookup)
+- `replace` - Documents replaced entirely (includes full document)
+- `delete` - Documents removed (includes only _id)
+
+### Testing CDC Locally
+
+#### Seed Test Data
+
+```bash
+# Generate initial test data (users and posts)
+uv run docker/seed-cdc-test-data.py
+
+# Run initial sync to establish change stream position
+meltano run tap-mongodb-cdc target-jsonl
+
+# Simulate CDC events (inserts, updates, deletes, replaces)
+uv run docker/seed-cdc-test-data.py --simulate-changes
+
+# Capture the changes
+meltano run tap-mongodb-cdc target-jsonl
+
+# View captured events by operation type
+grep '"operation_type"' output/*.jsonl | \
+  sed 's/.*"operation_type": "\([^"]*\)".*/\1/' | sort | uniq -c
+```
+
+#### Full End-to-End Test
+
+```bash
+# Complete test workflow
+docker compose up -d && sleep 30
+uv run docker/seed-cdc-test-data.py
+meltano run tap-mongodb-cdc target-jsonl
+uv run docker/seed-cdc-test-data.py --simulate-changes
+meltano run tap-mongodb-cdc target-jsonl
+```
+
+### Resume Tokens and State
+
+MongoDB change streams use resume tokens to track position in the oplog. The tap:
+- Stores resume tokens in state after each sync
+- Can resume from the exact position after crashes or restarts
+- Handles oplog window expiration gracefully (MongoDB 4.2+)
+
+### Connection String Format
+
+**MongoDB:**
+```
+mongodb://localhost:27017/?replicaSet=rs0&directConnection=true
+```
+
+**DocumentDB:**
+```
+mongodb://username:password@cluster.region.docdb.amazonaws.com:27017/?replicaSet=rs0&tls=true&tlsCAFile=rds-combined-ca-bundle.pem
+```
+
+Key parameters:
+- `replicaSet=rs0` - Required for change streams
+- `directConnection=true` - Recommended when connecting from outside Docker (MongoDB)
+- `tls=true&tlsCAFile=...` - Required for DocumentDB
+
+### AWS DocumentDB Configuration
+
+DocumentDB requires change streams to be enabled at the collection level:
+
+```bash
+# Enable change streams (requires admin privileges)
+db.adminCommand({
+  modifyChangeStreams: 1,
+  database: "test",
+  collection: "users",
+  enable: true
+})
+```
+
+Or set `allow_modify_change_streams: true` in tap config to auto-enable.
+
+### Idle Timeout Behavior
+
+The tap automatically exits after 10 seconds of inactivity:
+- **No manual intervention needed** - No Ctrl+C required
+- **Production-ready** - Safe for automated pipelines
+- **Resource-efficient** - Doesn't hang indefinitely
+- **Preserves resume tokens** - Can resume from exact position
+
+### Switching Between Modes
+
+**From INCREMENTAL to LOG_BASED:**
+1. Ensure MongoDB is running as replica set
+2. Update connection string to include `?replicaSet=rs0`
+3. Clear existing state: `rm -rf .meltano/extractors/tap-mongodb/`
+4. Use `tap-mongodb-cdc` plugin or update metadata to `LOG_BASED`
+
+**From LOG_BASED to INCREMENTAL:**
+1. Update connection string (can remove replica set parameters)
+2. Clear existing state
+3. Use base `tap-mongodb` plugin or update metadata to `INCREMENTAL`
+
+### Troubleshooting
+
+**"Change streams not available"**
+- Ensure you're connecting to a replica set with `?replicaSet=rs0`
+- For DocumentDB, verify change streams are enabled on collections
+
+**"Resume point no longer in oplog"**
+- The oplog window was exceeded (too much time between syncs)
+- Delete state file to start fresh: `rm -rf .meltano/`
+- Consider running syncs more frequently
+
+**No events captured**
+- Ensure changes occurred AFTER establishing the change stream position
+- Change streams only capture events after the stream opens
+- Run an initial sync first to establish position, then make changes
+
+**Cleanup Docker Environment**
+```bash
+# Stop and remove containers
+docker compose down -v
+
+# Remove generated files
+rm -rf output/ .meltano/run/
+```
+
+### Additional Resources
+
+- [MongoDB Change Streams Documentation](https://www.mongodb.com/docs/manual/changeStreams/)
+- [DocumentDB Change Streams Guide](https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html)
+- Testing helpers: `docker/seed-cdc-test-data.py`
+- Docker setup: `compose.yml` (3-node replica set)
 
 ## Developer Resources
 
