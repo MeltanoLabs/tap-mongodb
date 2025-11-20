@@ -119,7 +119,7 @@ plugins:
     metadata:
       '*':
         replication-method: INCREMENTAL
-        replication-key: _id
+        replication-key: replication_key
 
     # CDC variant using LOG_BASED replication with Change Streams
   - name: tap-mongodb-cdc
