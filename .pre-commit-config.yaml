@@ -24,11 +24,16 @@ repos:
           - --config-file=.yamllint.yaml
           - --format=parsable
           - --strict
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.14.5
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.8
     hooks:
       - id: ruff-check
         args:
           - --fix
           - --exit-non-zero-on-fix
       - id: ruff-format
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.9.16
+    hooks:
+      - id: uv-lock
+      - id: uv-sync
