@@ -18,6 +18,8 @@ class TapMongoDB(Tap):
     """mongodb tap class."""
 
     name = "tap-mongodb"
+    package_name = "meltanolabs-tap-mongodb"
+
     dynamic_catalog = True
 
     config_jsonschema = th.PropertiesList(
