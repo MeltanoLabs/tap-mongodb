@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import sys
 import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -18,6 +19,11 @@ from singer_sdk.helpers._util import utc_now
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED, Stream, TypeConformanceLevel
 
 from tap_mongodb.types import IncrementalId
+
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable
@@ -62,6 +68,7 @@ class MongoDBCollectionStream(Stream):
     """Stream class for mongodb streams."""
 
     replication_key = "replication_key"
+    default_replication_method = REPLICATION_INCREMENTAL
 
     # Disable timestamp replication keys. One caveat is this relies on an
     # alphanumerically sortable replication key. Python __gt__ and __lt__ are
@@ -202,6 +209,19 @@ class MongoDBCollectionStream(Stream):
                     time_extracted=extracted_at,
                 )
                 yield record_message
+
+    @override
+    @property
+    def replication_method(self) -> str:
+        """Return the replication key for the stream.
+
+        TODO: Remove this custom implementation once the SDK supports `default_replication_method` natively.
+        """
+        if self.forced_replication_method:
+            return str(self.forced_replication_method)
+        if self.replication_key:
+            return REPLICATION_INCREMENTAL
+        return self.default_replication_method
 
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
