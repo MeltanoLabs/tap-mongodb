@@ -749,7 +749,6 @@ source = { editable = "." }
 dependencies = [
     { name = "pymongo" },
     { name = "singer-sdk" },
-    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
 ]
 
 [package.optional-dependencies]
@@ -771,7 +770,6 @@ requires-dist = [
     { name = "pymongo", specifier = "~=4.15.4" },
     { name = "s3fs", marker = "extra == 's3'", specifier = ">=2025.10.0" },
     { name = "singer-sdk", specifier = "~=0.53.2" },
-    { name = "typing-extensions", marker = "python_full_version < '3.12'", specifier = ">=4.15.0" },
 ]
 provides-extras = ["s3"]
 

@@ -22,7 +22,6 @@ keywords = [
 dependencies = [
     "singer-sdk~=0.53.2",
     "pymongo~=4.15.4",
-    "typing-extensions>=4.15.0 ; python_full_version < '3.12'",
 ]
 
 [project.optional-dependencies]
