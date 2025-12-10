@@ -116,10 +116,11 @@ plugins:
       mongodb_connection_string: mongodb://admin:password@localhost:27017/
     select:
     - '*.*'
-    metadata:
-      '*':
-        replication-method: INCREMENTAL
-        replication-key: replication_key
+    # No replication metadata is required, the default replication method is INCREMENTAL
+    # metadata:
+    #   '*':
+    #     replication-method: INCREMENTAL
+    #     replication-key: replication_key
 
     # CDC variant using LOG_BASED replication with Change Streams
   - name: tap-mongodb-cdc
@@ -130,7 +131,7 @@ plugins:
     metadata:
       '*':
         replication-method: LOG_BASED
-        replication-key: replication_key
+        # replication-key: replication_key  # Specifying a replication key is not required
   loaders:
   - name: target-jsonl
     variant: andyh1203

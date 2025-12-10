@@ -5,6 +5,7 @@ on:
       - main
     paths:
       - .github/workflows/validate.yml
+      - meltano.yml
       - tap_mongodb/**
       - tests/**
       - pyproject.toml
@@ -12,6 +13,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/validate.yml
+      - meltano.yml
       - tap_mongodb/**
       - tests/**
       - pyproject.toml
@@ -133,6 +135,7 @@ jobs:
       USERNAME: admin
       PASSWORD: password
     strategy:
+      fail-fast: false
       matrix:
         mongodb-version:
           - '6.0'
