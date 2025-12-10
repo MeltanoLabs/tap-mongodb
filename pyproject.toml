@@ -106,6 +106,3 @@ minversion = "9.0"
 addopts = [
     "-v",
 ]
-
-[tool.uv.sources]
-singer-sdk = { git = "https://github.com/meltano/sdk.git", rev = "fix/default-replicaiton-key-metadata" }

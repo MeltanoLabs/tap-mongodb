@@ -8,6 +8,7 @@ from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 from singer_sdk.singerlib.catalog import CatalogEntry, MetadataMapping, Schema
+from singer_sdk.streams.core import REPLICATION_INCREMENTAL
 
 from tap_mongodb.schema import SCHEMA
 
@@ -90,14 +91,14 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
             replication_method=None,  # Must be defined by user
             metadata=MetadataMapping.get_standard_metadata(
                 schema=SCHEMA,
-                replication_method=None,  # Must be defined by user
+                replication_method=REPLICATION_INCREMENTAL,  # User can override this
                 key_properties=["replication_key"],
-                valid_replication_keys=None,  # Must be defined by user
+                valid_replication_keys=["replication_key"],  # Known valid replication keys
             ),
             database=None,  # Expects single-database context
             row_count=None,
             stream_alias=None,
-            replication_key=None,  # Must be defined by user
+            replication_key="replication_key",  # Default replication key
         )
 
     def discover_catalog_entries(self) -> list[dict[str, Any]]:

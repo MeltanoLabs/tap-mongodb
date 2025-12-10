@@ -8,7 +8,7 @@ plugins:
   extractors:
   - name: tap-mongodb
     namespace: tap_mongodb
-    pip_url: -e . git+https://github.com/meltano/sdk.git@fix/default-replicaiton-key-metadata
+    pip_url: -e .
     executable: tap-mongodb
     capabilities:
     - state
