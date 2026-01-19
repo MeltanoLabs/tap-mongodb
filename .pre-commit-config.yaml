@@ -17,7 +17,7 @@ repos:
           - '2'
       - id: trailing-whitespace
   - repo: https://github.com/adrienverge/yamllint.git
-    rev: v1.37.1
+    rev: v1.38.0
     hooks:
       - id: yamllint
         args:
@@ -25,7 +25,7 @@ repos:
           - --format=parsable
           - --strict
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.8
+    rev: v0.14.13
     hooks:
       - id: ruff-check
         args:
@@ -33,7 +33,7 @@ repos:
           - --exit-non-zero-on-fix
       - id: ruff-format
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.16
+    rev: 0.9.26
     hooks:
       - id: uv-lock
       - id: uv-sync
