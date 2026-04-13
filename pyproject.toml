@@ -36,7 +36,7 @@ dev = [
     "mypy>=1.0.0",
     "pytest>=9.0.3",
     "singer-sdk[testing]",
-    "ruff>=0.14.5",
+    "ruff>=0.15.10",
 ]
 
 [tool.hatch.build.targets.sdist]
