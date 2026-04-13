@@ -32,7 +32,7 @@ tap-mongodb = "tap_mongodb.tap:TapMongoDB.cli"
 
 [dependency-groups]
 dev = [
-    "faker>=38",
+    "faker>=40.13.0",
     "mypy>=1.0.0",
     "pytest>=9.0.3",
     "singer-sdk[testing]",
