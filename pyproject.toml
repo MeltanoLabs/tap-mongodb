@@ -20,7 +20,7 @@ keywords = [
     "mongodb",
 ]
 dependencies = [
-    "singer-sdk~=0.53.2",
+    "singer-sdk~=0.53.7",
     "pymongo~=4.16.0",
 ]
 
