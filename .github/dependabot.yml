@@ -7,7 +7,7 @@ updates:
   - package-ecosystem: uv
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
       timezone: America/Chicago
     commit-message:
       prefix: fix(deps)
@@ -15,5 +15,5 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: quarterly
       timezone: America/Chicago
