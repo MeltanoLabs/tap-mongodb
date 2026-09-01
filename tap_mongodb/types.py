@@ -65,7 +65,7 @@ class IncrementalId:
             msg = "Invalid IncrementalId string"
             raise ValueError(msg)
         datetime_part = datetime.fromisoformat(matched["dt"])
-        object_id_part = matched["oid"] if matched["oid"] else None
+        object_id_part = matched["oid"] or None
         return IncrementalId(datetime_part, object_id_part)
 
     @classmethod
