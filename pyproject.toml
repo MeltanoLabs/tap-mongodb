@@ -1,107 +1,113 @@
 [build-system]
-requires = [
-    "hatchling>=1.31.0,<2",
-    "hatch-vcs>=0.5.0,<1",
-]
 build-backend = "hatchling.build"
+requires = [
+  "hatch-vcs>=0.5,<1",
+  "hatchling>=1.31,<2",
+]
 
 [project]
 name = "meltanolabs-tap-mongodb"
-dynamic = [ "version" ]
 description = "Singer tap for MongoDB and AWS DocumentDB, built with the Meltano Singer SDK."
-authors = [{ name = "Matt Menzenski" }]
-maintainers = [{ name = "Meltano Labs" }]
-requires-python = ">=3.10"
 readme = "README.md"
+keywords = [
+  "ELT",
+  "mongodb",
+]
 license = "Apache-2.0"
 license-files = [ "LICENSE" ]
-keywords = [
-    "ELT",
-    "mongodb",
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
+dynamic = [ "version" ]
 dependencies = [
-    "singer-sdk~=0.54.5",
-    "pymongo~=4.17.0",
+  "pymongo~=4.17.0",
+  "singer-sdk~=0.54.5",
 ]
-
+[[project.maintainers]]
+name = "Meltano Labs"
+[[project.authors]]
+name = "Matt Menzenski"
 [project.optional-dependencies]
-s3 = ["s3fs>=2026.7.0"]
-
+s3 = [ "s3fs>=2026.7" ]
 [project.scripts]
 tap-mongodb = "tap_mongodb.tap:TapMongoDB.cli"
 
 [dependency-groups]
 dev = [
-    "faker>=40.36.0",
-    "mypy>=2.3.0",
-    "pytest>=9.1.1",
-    "singer-sdk[testing]",
-    "ruff>=0.16.0",
+  "faker>=40.36",
+  "mypy>=2.3",
+  "pytest>=9.1.1",
+  "ruff>=0.16",
+  "singer-sdk[testing]",
 ]
 
-[tool.hatch.build.targets.sdist]
-include = ["tap_mongodb", "tests"]
-
-[tool.hatch.build.targets.wheel]
-include = ["tap_mongodb"]
-
 [tool.hatch.version]
-fallback-version = "2.5.0"
 source = "vcs"
+fallback-version = "2.5.0"
+[tool.hatch.build.targets.sdist]
+include = [ "tap_mongodb", "tests" ]
+[tool.hatch.build.targets.wheel]
+include = [ "tap_mongodb" ]
+
+[tool.uv]
+required-version = ">=0.12"
+
+[tool.ruff]
+line-length = 120
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [ "ANN", "S101" ]
+[tool.ruff.lint.isort]
+known-third-party = [
+  "pymongo",
+  "singer_sdk",
+]
+[tool.ruff.lint]
+extend-select = [
+  "A",
+  "B",
+  "C4",
+  "E",
+  "F",
+  "FURB",
+  "G",
+  "I",
+  "LOG",
+  "PERF",
+  "RUF",
+  "S",
+  "TC",
+  "TRY",
+  "UP",
+]
+exclude = [
+  ".meltano",
+  ".secrets",
+  "output",
+]
 
 [tool.mypy]
 warn_unused_configs = true
+
+[tool.pytest]
+addopts = [
+  "-v",
+]
+minversion = "9.0"
 
 [tool.yamlfix]
 comments_min_spaces_from_content = 2
 comments_require_starting_space = true
 explicit_start = false
-sequence_style = 'block_style'
+sequence_style = "block_style"
 indent_mapping = 2
 indent_offset = 2
 indent_sequence = 4
 line_length = 180
 quote_basic_values = false
 quote_keys_and_basic_values = false
-
-[tool.ruff]
-line-length = 120
-
-[tool.ruff.lint]
-extend-select = [
-    "A",
-    "B",
-    "C4",
-    "E",
-    "F",
-    "FURB",
-    "G",
-    "I",
-    "LOG",
-    "PERF",
-    "RUF",
-    "S",
-    "TC",
-    "TRY",
-    "UP",
-]
-exclude = [
-    ".meltano",
-    ".secrets",
-    "output",
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["ANN", "S101"]
-
-[tool.ruff.lint.isort]
-known-third-party = [
-    "pymongo",
-    "singer_sdk",
-]
-
-[tool.pytest]
-minversion = "9.0"
-addopts = [
-    "-v",
-]
