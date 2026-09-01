@@ -25,7 +25,7 @@ repos:
           - --format=parsable
           - --strict
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.13
+    rev: v0.16.4
     hooks:
       - id: ruff-check
         args:
@@ -33,7 +33,13 @@ repos:
           - --exit-non-zero-on-fix
       - id: ruff-format
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.26
+    rev: 0.12.5
     hooks:
       - id: uv-lock
       - id: uv-sync
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.38.0
+    hooks:
+      - id: check-dependabot
+      - id: check-github-workflows
+      - id: check-meltano

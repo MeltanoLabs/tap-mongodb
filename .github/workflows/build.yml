@@ -1,18 +1,27 @@
 name: Release
 on:
   push:
-permissions:
-  contents: write  # Needed to upload artifacts to the release
-  id-token: write  # Needed for OIDC PyPI publishing
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
 jobs:
   build:
     name: Build Wheel and SDist
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Needed to upload artifacts to the release
+      id-token: write  # Needed for OIDC PyPI publishing
     outputs:
       name: ${{ steps.baipp.outputs.package_name }}
       version: ${{ steps.baipp.outputs.package_version }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
       - uses: hynek/build-and-inspect-python-package@2abe76da66d0a6a4a227101f9348ee855797cfa5  # v3.0.1
         id: baipp
   publish:
@@ -32,4 +41,4 @@ jobs:
           name: Packages
           path: dist
       - name: Publish
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
