@@ -38,7 +38,7 @@ jobs:
           - '3.14'
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v6-beta
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v6-beta
       - name: Set up Python ${{ matrix.python-version }}
         id: setup-python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
@@ -68,7 +68,7 @@ jobs:
           - '3.14'
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v6-beta
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v6-beta
       - name: Set up Python ${{ matrix.python-version }}
         id: setup-python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
@@ -103,7 +103,7 @@ jobs:
           - mongo-version: '7.0'
             python-version: '3.14'
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v6-beta
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v6-beta
       - name: Set up Python ${{ matrix.python-version }}
         id: setup-python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
@@ -142,7 +142,7 @@ jobs:
           - '7.0'
           - '8.0'
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v6-beta
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v6-beta
       - name: Start MongoDB
         uses: supercharge/mongodb-github-action@315db7fe45ac2880b7758f1933e6e5d59afd5e94  # 1.12.1
         with:
