@@ -7,8 +7,8 @@ This script:
 """
 
 import argparse
+import datetime as dt
 import time
-from datetime import datetime
 
 import pymongo
 from faker import Faker
@@ -83,7 +83,7 @@ def simulate_cdc_events(db, users_oids):
                 "name": fake.name(),
                 "email": fake.email(),
                 "address": fake.address(),
-                "joined_at": datetime.now(),
+                "joined_at": dt.datetime.now(tz=dt.timezone.utc),
                 "active": True,
             }
         )
@@ -100,7 +100,7 @@ def simulate_cdc_events(db, users_oids):
             {
                 "$set": {
                     "address": fake.address(),
-                    "updated_at": datetime.now(),
+                    "updated_at": dt.datetime.now(tz=dt.timezone.utc),
                 }
             },
         )
@@ -116,8 +116,8 @@ def simulate_cdc_events(db, users_oids):
                 "title": fake.sentence(),
                 "content": fake.text(),
                 "user_id": fake.random_element(all_users),
-                "created_at": datetime.now(),
-                "updated_at": datetime.now(),
+                "created_at": dt.datetime.now(tz=dt.timezone.utc),
+                "updated_at": dt.datetime.now(tz=dt.timezone.utc),
                 "views": 0,
                 "published": True,
             }
@@ -133,7 +133,7 @@ def simulate_cdc_events(db, users_oids):
             {"_id": post["_id"]},
             {
                 "$inc": {"views": fake.random_int(min=1, max=50)},
-                "$set": {"updated_at": datetime.now()},
+                "$set": {"updated_at": dt.datetime.now(tz=dt.timezone.utc)},
             },
         )
         print(f"   ✓ Updated post views: {post['_id']}")
@@ -148,7 +148,7 @@ def simulate_cdc_events(db, users_oids):
             "name": fake.name(),
             "email": fake.email(),
             "address": fake.address(),
-            "joined_at": datetime.now(),
+            "joined_at": dt.datetime.now(tz=dt.timezone.utc),
             "active": True,
             "replaced": True,
         },
@@ -212,7 +212,7 @@ def main():
     try:
         client.admin.command("ping")
         print("✓ Connected to MongoDB")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"✗ Failed to connect: {e}")
         return
 
