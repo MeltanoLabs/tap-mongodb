@@ -2,18 +2,52 @@
 # package ecosystems to update and where the package manifests are located.
 # Please see the documentation for all configuration options:
 # https://help.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
 version: 2
 updates:
   - package-ecosystem: uv
-    directory: /
+    open-pull-requests-limit: 4
+    directory: "/"
     schedule:
       interval: monthly
-      timezone: America/Chicago
     commit-message:
-      prefix: fix(deps)
-      prefix-development: chore(deps)
+      prefix: "chore(deps): "
+      prefix-development: "chore(deps-dev): "
+    versioning-strategy: increase-if-necessary
+    groups:
+      development-dependencies:
+        dependency-type: development
+      runtime-dependencies:
+        dependency-type: production
+        update-types:
+          - "patch"
+    allow:
+      - dependency-type: all
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
-    directory: /
+    open-pull-requests-limit: 1
+    directory: "/"
     schedule:
       interval: quarterly
-      timezone: America/Chicago
+    commit-message:
+      prefix: "ci: "
+    groups:
+      actions:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
+  - package-ecosystem: pre-commit
+    open-pull-requests-limit: 1
+    directory: "/"
+    schedule:
+      interval: quarterly
+    groups:
+      hooks:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore: "
+    cooldown:
+      default-days: 7
