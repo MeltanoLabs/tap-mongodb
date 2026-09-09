@@ -248,7 +248,10 @@ class MongoDBCollectionStream(Stream):
                 yield parsed_record
 
         elif self.replication_method == REPLICATION_LOG_BASED:
-            change_stream_options = {"full_document": "updateLookup"}
+            change_stream_options = {
+                "full_document": "updateLookup",
+                "pipeline": self.config.get("change_stream_pipeline", []),
+            }
             if bookmark is not None and bookmark != DEFAULT_START_DATE:
                 self.logger.info("using bookmark: %s", bookmark)
                 # if on mongo version 4.2 or above, use start_after instead of resume_after, as the former will
