@@ -156,6 +156,24 @@ class TapMongoDB(Tap):
             ],
         ),
         th.Property(
+            "change_stream_pipeline",
+            th.ArrayType(th.ObjectType()),
+            required=False,
+            default=[],
+            description=(
+                "Optional list of MongoDB aggregation pipeline stages to append to the change stream, passed as the "
+                "`pipeline` argument to `collection.watch()`. Only used in LOG_BASED replication mode. This can be "
+                "used to reduce the size of change stream events server-side before they are returned to the tap - "
+                'for example, `[{"$unset": "updateDescription"}]` will drop the updateDescription field (which the '
+                "tap does not read) from update events, helping avoid MongoDB's 16MB BSON document size limit on "
+                "events for collections with large documents. It can also be used for server-side filtering (e.g. "
+                "`$match`), complementing the operation_types setting. Note: no validation is performed on this "
+                "pipeline - it is the user's responsibility to ensure the pipeline does not remove fields the tap "
+                "depends on (`_id`, `operationType`, `clusterTime`, `ns`, and `fullDocument`/`documentKey`), which "
+                "would cause tap errors."
+            ),
+        ),
+        th.Property(
             "stream_maps",
             th.ObjectType(),
             required=False,
