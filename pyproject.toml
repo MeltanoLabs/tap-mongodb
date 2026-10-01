@@ -26,7 +26,7 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 dependencies = [
-  "pymongo~=4.17.0",
+  "pymongo>=4.17,<4.19",
   "singer-sdk~=0.54.5",
 ]
 [[project.maintainers]]
