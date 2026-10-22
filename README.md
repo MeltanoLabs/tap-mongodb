@@ -52,7 +52,7 @@ Records have the same fields as in RECORD mode, with `document` as an Arrow stru
 | Sub-documents and arrays | JSON |
 | Values of more than one BSON type | JSON, with a warning naming the field |
 
-JSON values use Arrow's canonical [`arrow.json`](https://arrow.apache.org/docs/format/CanonicalExtensions.html#json) extension type: readers that understand it, such as DuckDB, get JSON values, and others get the JSON text.
+JSON values use Arrow's canonical [`arrow.json`](https://arrow.apache.org/docs/format/CanonicalExtensions.html#json) extension type. Targets built with the Meltano Singer SDK (0.55.0b7 or later) decode them, so they receive the same documents as in RECORD mode. Other readers that understand the type, such as DuckDB, get JSON values, and the rest get the JSON text.
 
 A sync extracts the documents that existed when it started; documents inserted during the sync are picked up by the next one. If a document is updated during the sync so that a field no longer matches its scanned type, the sync fails with an error asking to run it again.
 

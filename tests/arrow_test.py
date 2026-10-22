@@ -18,6 +18,8 @@ from bson import Binary, Decimal128, Int64, ObjectId
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from pymongoarrow.types import ObjectIdType
+from singer_sdk.contrib.batch_decoder_arrow import ArrowReader
+from singer_sdk.helpers._batch import BaseBatchFileEncoding
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED
 
 from tap_mongodb.arrow import DocumentPlan, incremental_ids, object_id_hex
@@ -160,6 +162,18 @@ def _batch_rows(messages: list[dict]) -> list[dict]:
     return rows
 
 
+def _target_records(messages: list[dict]) -> list[dict]:
+    """Read the batch files the way SDK targets do."""
+    reader = ArrowReader(BaseBatchFileEncoding(format="arrow"))
+    records = []
+    for message in messages:
+        if message["type"] == "BATCH":
+            (url,) = message["manifest"]
+            with open(url.removeprefix("file://"), "rb") as file:
+                records.extend(reader.read(file))
+    return records
+
+
 def _normalize_batch_document(document: dict, as_json: set[str]) -> dict:
     """Turn an Arrow `document` into what RECORD mode's JSON would decode to."""
     normalized = {}
@@ -223,6 +237,12 @@ def test_arrow_batches_match_record_mode(collection, tmp_path, caplog: pytest.Lo
         assert row["cluster_time"] is None
         expected = {k: v for k, v in record["document"].items() if v is not None}
         assert _normalize_batch_document(row["document"], {"nested", "tags", "mixed"}) == expected
+
+    # SDK targets decode `arrow.json` values, so they get the same documents as from RECORD messages
+    for target_record, record in zip(_target_records(batch_messages), records, strict=True):
+        assert _normalize_batch_document(target_record["document"], set()) == {
+            k: v for k, v in record["document"].items() if v is not None
+        }
 
 
 def test_arrow_batches_state_and_resume(collection, tmp_path):
