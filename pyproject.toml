@@ -30,7 +30,7 @@ dependencies = [
   "pyarrow==25.0.0",
   "pymongo>=4.17,<4.19",
   "pymongoarrow>=1.15,<1.16",
-  "singer-sdk>=0.55.0b5",
+  "singer-sdk>=0.55.0b6",
 ]
 [[project.maintainers]]
 name = "Meltano Labs"
