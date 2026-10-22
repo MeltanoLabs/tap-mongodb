@@ -26,8 +26,12 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 dependencies = [
+  # TODO: Bump to 26.0.0 and declare support for Python 3.15 once https://github.com/mongodb-labs/mongo-arrow/pull/432 is published
+  # NOTE: pymongoarrow 1.15.0 wheels are built against pyarrow 25.0.0; 25.0.1 changed object sizes, so we're stuck with 25.0.0
+  "pyarrow==25.0.0",
   "pymongo>=4.17,<4.19",
-  "singer-sdk~=0.54.5",
+  "pymongoarrow>=1.15,<1.16",
+  "singer-sdk>=0.55.0b7",
 ]
 [[project.maintainers]]
 name = "Meltano Labs"
@@ -42,6 +46,7 @@ tap-mongodb = "tap_mongodb.tap:TapMongoDB.cli"
 dev = [
   "faker>=40.36",
   "mypy>=2.3",
+  "nanoarrow>=0.7",
   "pytest>=9.1.1",
   "ruff>=0.16",
   "singer-sdk[testing]",

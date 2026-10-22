@@ -17,19 +17,23 @@ from singer_sdk.helpers._typing import conform_record_data_types
 from singer_sdk.helpers._util import utc_now
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED, Stream, TypeConformanceLevel
 
+from tap_mongodb.arrow import ArrowExtractor
 from tap_mongodb.types import IncrementalId
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterable
+    from collections.abc import Generator, Iterable, Mapping
 
+    import pyarrow as pa
     from bson.objectid import ObjectId
     from pymongo.collection import Collection
     from pymongo.database import Database
     from pymongo.typings import _DocumentType
+    from singer_sdk.helpers._batch import BatchConfig
 
     from tap_mongodb.connector import MongoDBConnector
 
 DEFAULT_START_DATE: str = "1970-01-01"
+DEFAULT_ARROW_BATCH_SIZE: int = 100_000
 
 
 def recursive_replace_empty_in_dict(dct):
@@ -202,6 +206,38 @@ class MongoDBCollectionStream(Stream):
                     time_extracted=extracted_at,
                 )
                 yield record_message
+
+    def get_batch_config(self, config: Mapping) -> BatchConfig | None:
+        """Return the batch config, or None to emit RECORD messages.
+
+        With the Arrow format, change streams (LOG_BASED) emit RECORD messages instead: their events arrive one at a
+        time and are already small. The default `batch_size` for Arrow is raised to 100,000 rows per file.
+        """
+        raw = config.get("batch_config") or {}
+        if (raw.get("encoding") or {}).get("format") == "arrow":
+            if self.replication_method != REPLICATION_INCREMENTAL:
+                return None
+            if "batch_size" not in raw:
+                config = {**config, "batch_config": {**raw, "batch_size": DEFAULT_ARROW_BATCH_SIZE}}
+        return super().get_batch_config(config)
+
+    def get_record_batches(self, context: dict | None) -> Iterable[pa.Table] | None:
+        """Return the stream's documents as Arrow tables, for Arrow BATCH files.
+
+        Only incremental replication produces Arrow data; see `tap_mongodb.arrow` for how documents are converted.
+        """
+        if self.replication_method != REPLICATION_INCREMENTAL:
+            return None
+
+        bookmark: str | None = self.get_starting_replication_key_value(context)
+        start = to_object_id(bookmark or self.config.get("start_date", DEFAULT_START_DATE))
+        extractor = ArrowExtractor(
+            collection=self._connector.database[self._collection_name],
+            stream_name=self.name,
+            logger=self.logger,
+            add_record_metadata=self.config.get("add_record_metadata", False),
+        )
+        return extractor.tables(start)
 
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
