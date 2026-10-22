@@ -178,14 +178,21 @@ def _normalize_batch_document(document: dict, as_json: set[str]) -> dict:
     """Turn an Arrow `document` into what RECORD mode's JSON would decode to."""
     normalized = {}
     for name, value in document.items():
-        if value is None:
-            continue
-        if name in as_json:
+        if value is not None and name in as_json:
             value = json.loads(value)
         elif isinstance(value, datetime):
             value = value.replace(tzinfo=None).isoformat()
         normalized[name] = value
     return normalized
+
+
+def _with_sql_nulls(record_document: dict, fields: list[str]) -> dict:
+    """RECORD mode's document with SQL semantics: a missing field is null, like an explicit null.
+
+    An Arrow struct has a fixed set of fields, so it can't tell a missing field from a null one.
+    """
+    assert set(record_document) <= set(fields), "a RECORD field is missing from the Arrow struct"
+    return {name: record_document.get(name) for name in fields}
 
 
 def test_arrow_batches_match_record_mode(collection, tmp_path, caplog: pytest.LogCaptureFixture):
@@ -235,14 +242,13 @@ def test_arrow_batches_match_record_mode(collection, tmp_path, caplog: pytest.Lo
         assert row["namespace"] == record["namespace"]
         assert row["operation_type"] is None
         assert row["cluster_time"] is None
-        expected = {k: v for k, v in record["document"].items() if v is not None}
+        expected = _with_sql_nulls(record["document"], list(row["document"]))
         assert _normalize_batch_document(row["document"], {"nested", "tags", "mixed"}) == expected
 
     # SDK targets decode `arrow.json` values, so they get the same documents as from RECORD messages
     for target_record, record in zip(_target_records(batch_messages), records, strict=True):
-        assert _normalize_batch_document(target_record["document"], set()) == {
-            k: v for k, v in record["document"].items() if v is not None
-        }
+        document = target_record["document"]
+        assert _normalize_batch_document(document, set()) == _with_sql_nulls(record["document"], list(document))
 
 
 def test_arrow_batches_state_and_resume(collection, tmp_path):

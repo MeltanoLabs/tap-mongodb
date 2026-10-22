@@ -54,6 +54,8 @@ Records have the same fields as in RECORD mode, with `document` as an Arrow stru
 
 JSON values use Arrow's canonical [`arrow.json`](https://arrow.apache.org/docs/format/CanonicalExtensions.html#json) extension type. Targets built with the Meltano Singer SDK (0.55.0b7 or later) decode them, so they receive the same documents as in RECORD mode. Other readers that understand the type, such as DuckDB, get JSON values, and the rest get the JSON text.
 
+The `document` struct has a fixed set of fields, so a field missing from a document and a field set to `null` both come through as null (SQL semantics). In RECORD mode, a missing field is left out of the `document` object instead.
+
 A sync extracts the documents that existed when it started; documents inserted during the sync are picked up by the next one. If a document is updated during the sync so that a field no longer matches its scanned type, the sync fails with an error asking to run it again.
 
 ## Installation
