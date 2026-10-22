@@ -26,8 +26,11 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 dependencies = [
+  # pymongoarrow 1.15.0 wheels are built against pyarrow 25.0.0; 25.0.1 changed object sizes
+  "pyarrow==25.0.0",
   "pymongo>=4.17,<4.19",
-  "singer-sdk~=0.54.5",
+  "pymongoarrow>=1.15,<1.16",
+  "singer-sdk>=0.55.0b5",
 ]
 [[project.maintainers]]
 name = "Meltano Labs"

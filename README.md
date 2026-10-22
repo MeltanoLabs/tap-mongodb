@@ -27,6 +27,33 @@ The tap supports two replication modes:
 - Includes operation metadata, cluster timestamps, and full document state
 - Automatically exits after 10 seconds of inactivity (production-ready)
 
+## Arrow BATCH mode
+
+Setting `batch_config` with the `arrow` format makes INCREMENTAL streams write [Apache Arrow](https://arrow.apache.org/) IPC files and emit [Singer BATCH messages](https://sdk.meltano.com/en/latest/batch.html) instead of one RECORD message per document. Documents are decoded from raw BSON with [PyMongoArrow](https://www.mongodb.com/docs/languages/python/pymongo-arrow-driver/current/), so most values never become Python objects.
+
+```json
+{
+  "batch_config": {
+    "encoding": {"format": "arrow"},
+    "storage": {"root": "file:///tmp/batches"},
+    "batch_size": 100000
+  }
+}
+```
+
+`batch_size` defaults to 100,000 rows per file, and `storage.root` to a `singer-sdk` folder in the OS temp directory. A STATE message follows each file, so an interrupted sync resumes after the last file written. LOG_BASED streams keep emitting RECORD messages.
+
+Records have the same fields as in RECORD mode, with `document` as an Arrow struct. Before extracting, the tap scans the BSON types of each top-level document field, and converts each field as follows:
+
+| Top-level field | In the `document` struct |
+|:----------------|:-------------------------|
+| One of double, string, bool, int/long, date, ObjectId | The matching Arrow type: double, string, bool, int64, UTC timestamp, hex string |
+| Another scalar type (decimal, binary, ...) | The string RECORD mode emits, e.g. `"1.5"` |
+| Sub-documents and arrays | JSON text |
+| Values of more than one BSON type | JSON text, with a warning naming the field |
+
+A sync extracts the documents that existed when it started; documents inserted during the sync are picked up by the next one. If a document is updated during the sync so that a field no longer matches its scanned type, the sync fails with an error asking to run it again.
+
 ## Installation
 
 Install from GitHub:
@@ -57,6 +84,7 @@ uv tool install git+https://github.com/MeltanoLabs/tap-mongodb.git@main
 | allow_modify_change_streams              | boolean      |  False   |                False                | In AWS DocumentDB (unlike MongoDB), change streams must be enabled specifically (see the [documentation here](https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html#change_streams-enabling) ). If attempting to open a change stream against a collection on which change streams have not been enabled, an OperationFailure error will be raised. If this property is set to True, when this error is seen, the tap will execute an admin command to enable change streams and then retry the read operation. Note: this may incur new costs in AWS DocumentDB. |
 | operation_types                          | list(string) |  False   | create,delete,insert,replace,update | List of MongoDB change stream operation types to include in tap output. The default behavior is to limit to document-level operation types. See full list of operation types in [the MongoDB documentation](https://www.mongodb.com/docs/manual/reference/change-events/#operation-types). Note that the list of allowed_values for this property includes some values not available to all MongoDB versions.                                                                                                                                                                                |                                                                                                                                                                               |
 | change_stream_pipeline                   | list(object) |  False   |                  []                 | Optional list of MongoDB aggregation pipeline stages appended to the change stream (passed as the `pipeline` argument to `collection.watch()`). Only used in LOG_BASED replication mode. Can be used to reduce event size server-side to avoid MongoDB's 16MB BSON limit - e.g. `[{"$unset": "updateDescription"}]` drops a field the tap never reads - or for server-side filtering via `$match`, complementing `operation_types`. No validation is performed; a pipeline that removes `_id`, `operationType`, `clusterTime`, `ns`, or both `fullDocument`/`documentKey` will cause tap errors. |
+| batch_config                             | object       |  False   |                  -                  | Opts into Singer BATCH messages. With `encoding.format: arrow`, incremental streams write Apache Arrow IPC files decoded straight from BSON. See [Arrow BATCH mode](#arrow-batch-mode). |
 
 ### Configure using environment variables
 
