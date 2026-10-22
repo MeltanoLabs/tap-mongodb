@@ -40,7 +40,7 @@ NATIVE_TYPES: dict[str, pa.DataType] = {
     "objectId": ObjectIdType(),
 }
 
-# Values of these BSON types are serialized to JSON text, like RECORD mode serializes them
+# Values of these BSON types are serialized to JSON like RECORD mode does, typed with Arrow's canonical JSON type
 JSON_TYPES = frozenset({"object", "array"})
 
 _HEX_DIGITS = np.frombuffer(b"0123456789abcdef", dtype=np.uint8)
@@ -59,7 +59,7 @@ class DocumentPlan:
     """Scalar fields of a BSON type pymongoarrow doesn't decode, emitted as the string RECORD mode emits."""
 
     as_json: list[str] = field(default_factory=list)
-    """Sub-documents, arrays and fields with conflicting types, emitted as JSON text."""
+    """Sub-documents, arrays and fields with conflicting types, emitted with Arrow's canonical JSON type."""
 
     @property
     def python_fields(self) -> list[str]:
@@ -99,7 +99,7 @@ class DocumentPlan:
                 if len(types) > 1:
                     logger.warning(
                         "Field '%s' in stream '%s' has values of more than one BSON type (%s), so it is emitted as "
-                        "JSON text in Arrow batch files.",
+                        "JSON in Arrow batch files.",
                         name,
                         stream_name,
                         ", ".join(sorted(seen)),
@@ -241,7 +241,7 @@ class ArrowExtractor:
                 columns.append(pa.array([_as_string(doc.get(name)) for doc in documents], type=pa.string()))
             for name in plan.as_json:
                 names.append(name)
-                columns.append(pa.array([_as_json(doc.get(name)) for doc in documents], type=pa.string()))
+                columns.append(pa.array([_as_json(doc.get(name)) for doc in documents], type=pa.json_()))
 
         object_ids = native["_id"].combine_chunks()
         hexes = object_id_hex(object_ids)

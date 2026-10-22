@@ -49,8 +49,10 @@ Records have the same fields as in RECORD mode, with `document` as an Arrow stru
 |:----------------|:-------------------------|
 | One of double, string, bool, int/long, date, ObjectId | The matching Arrow type: double, string, bool, int64, UTC timestamp, hex string |
 | Another scalar type (decimal, binary, ...) | The string RECORD mode emits, e.g. `"1.5"` |
-| Sub-documents and arrays | JSON text |
-| Values of more than one BSON type | JSON text, with a warning naming the field |
+| Sub-documents and arrays | JSON |
+| Values of more than one BSON type | JSON, with a warning naming the field |
+
+JSON values use Arrow's canonical [`arrow.json`](https://arrow.apache.org/docs/format/CanonicalExtensions.html#json) extension type: readers that understand it, such as DuckDB, get JSON values, and others get the JSON text.
 
 A sync extracts the documents that existed when it started; documents inserted during the sync are picked up by the next one. If a document is updated during the sync so that a field no longer matches its scanned type, the sync fails with an error asking to run it again.
 

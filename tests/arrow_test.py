@@ -206,6 +206,14 @@ def test_arrow_batches_match_record_mode(collection, tmp_path, caplog: pytest.Lo
     assert not [m for m in batch_messages if m["type"] == "RECORD"]
     assert len(rows) == len(records) == 250
     assert "Field 'mixed'" in caplog.text
+    document_type = (
+        pa.ipc.open_file(
+            next(m for m in batch_messages if m["type"] == "BATCH")["manifest"][0].removeprefix("file://"),
+        )
+        .schema.field("document")
+        .type
+    )
+    assert {document_type.field(name).type.extension_name for name in ("nested", "tags", "mixed")} == {"arrow.json"}
 
     for row, record in zip(rows, records, strict=True):
         assert row["replication_key"] == record["replication_key"]
