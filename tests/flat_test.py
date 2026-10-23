@@ -18,6 +18,7 @@ from pymongo.errors import PyMongoError
 from singer_sdk.contrib.batch_decoder_arrow import ArrowReader
 from singer_sdk.helpers._batch import BaseBatchFileEncoding
 
+from tap_mongodb import arrow
 from tap_mongodb.flat import DeclaredField, DeclaredTypeError, declared_fields, flatten_document
 from tap_mongodb.tap import TapMongoDB
 
@@ -280,3 +281,20 @@ def test_flat_layout_requires_declared_fields(collection, tmp_path, batch: bool)
     collection.insert_one({"age": 1})
     with pytest.raises(ValueError, match=r"requires the schema of stream .* to declare the document fields"):
         _sync(collection, tmp_path, batch=batch, declared={})
+
+
+@pytest.mark.parametrize("update,bson_type", [(1.5, "double"), (True, "bool")])
+def test_flat_layout_arrow_fails_on_silently_coerced_update(collection, tmp_path, monkeypatch, update, bson_type):
+    """A declared integer updated during the sync can't be silently truncated or coerced by pymongoarrow."""
+    collection.insert_many([{"age": i} for i in range(3)])
+    updated = collection.find_one(sort=[("_id", -1)])["_id"]
+    scan = arrow.scan_declared_types
+
+    def scan_then_update(*args, **kwargs):
+        result = scan(*args, **kwargs)
+        collection.update_one({"_id": updated}, {"$set": {"age": update}})  # After the check, before extraction
+        return result
+
+    monkeypatch.setattr(arrow, "scan_declared_types", scan_then_update)
+    with pytest.raises(RuntimeError, match=f"Field 'age' .* BSON type '{bson_type}' in document {updated}"):
+        _sync(collection, tmp_path, batch=True, declared={"age": {"type": ["integer", "null"]}})
