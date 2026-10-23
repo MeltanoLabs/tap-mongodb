@@ -58,6 +58,43 @@ The `document` struct has a fixed set of fields, so a field missing from a docum
 
 A sync extracts the documents that existed when it started; documents inserted during the sync are picked up by the next one. If a document is updated during the sync so that a field no longer matches its scanned type, the sync fails with an error asking to run it again.
 
+## Flat document layout
+
+By default, each record carries the whole document in a single `document` object. With `document_layout: flat`, each document field you declare becomes its own typed column instead, in RECORD and BATCH mode alike. Declare the fields as properties of the stream's schema, for example with Meltano's `schema` extra:
+
+```yaml
+plugins:
+  extractors:
+  - name: tap-mongodb
+    config:
+      document_layout: flat
+    schema:
+      users:
+        name: {type: [string, "null"]}
+        age: {type: [integer, "null"]}
+        joined_at: {type: [string, "null"], format: date-time}
+        manager_id: {type: [string, "null"]}
+        address: {type: [object, "null"]}
+```
+
+Property names are the documents' top-level field names. The record envelope (`replication_key`, `object_id`, `namespace`, ...) stays, and the `document` property is left out.
+
+| Declared type | Accepted BSON values | Column |
+|:--------------|:---------------------|:-------|
+| `integer` | int, long | integer |
+| `number` | int, long, double | number (NaN and infinities become null) |
+| `boolean` | bool | boolean |
+| `string` with `format: date-time` | date | timestamp |
+| `string` | string, and types JSON has no equivalent for (ObjectId, Decimal128, binary, ...) | string: an ObjectId becomes its hex string, a Decimal128 like `"1.5"` |
+| `object`, `array` | sub-document, array | JSON |
+| any other declaration, e.g. `[integer, string]` | any | JSON |
+
+- **Type mismatches fail the sync**, naming the field and a document: e.g. a double in an `integer` field. With Arrow batches, the tap checks the declared fields' types in the sync's range before writing any file, so nothing is written for a failing sync.
+- **Undeclared fields are dropped**, with a warning naming them.
+- **Missing fields are null**, like explicit `null` values.
+- **Deselected fields** aren't extracted or checked.
+- Field names containing `.` or starting with `$` aren't supported yet.
+
 ## Installation
 
 Install from GitHub:
@@ -89,6 +126,7 @@ uv tool install git+https://github.com/MeltanoLabs/tap-mongodb.git@main
 | operation_types                          | list(string) |  False   | create,delete,insert,replace,update | List of MongoDB change stream operation types to include in tap output. The default behavior is to limit to document-level operation types. See full list of operation types in [the MongoDB documentation](https://www.mongodb.com/docs/manual/reference/change-events/#operation-types). Note that the list of allowed_values for this property includes some values not available to all MongoDB versions.                                                                                                                                                                                |                                                                                                                                                                               |
 | change_stream_pipeline                   | list(object) |  False   |                  []                 | Optional list of MongoDB aggregation pipeline stages appended to the change stream (passed as the `pipeline` argument to `collection.watch()`). Only used in LOG_BASED replication mode. Can be used to reduce event size server-side to avoid MongoDB's 16MB BSON limit - e.g. `[{"$unset": "updateDescription"}]` drops a field the tap never reads - or for server-side filtering via `$match`, complementing `operation_types`. No validation is performed; a pipeline that removes `_id`, `operationType`, `clusterTime`, `ns`, or both `fullDocument`/`documentKey` will cause tap errors. |
 | batch_config                             | object       |  False   |                  -                  | Opts into Singer BATCH messages. With `encoding.format: arrow`, incremental streams write Apache Arrow IPC files decoded straight from BSON. See [Arrow BATCH mode](#arrow-batch-mode). |
+| document_layout                          | string       |  False   |               object                | `object` emits each document as a single `document` object. `flat` emits each document field declared in the stream's schema as its own column. See [Flat document layout](#flat-document-layout). |
 
 ### Configure using environment variables
 

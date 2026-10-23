@@ -9,6 +9,7 @@ from urllib.parse import quote_plus
 
 from singer_sdk import Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
+from singer_sdk.singerlib import Catalog
 
 from tap_mongodb.connector import MongoDBConnector
 from tap_mongodb.streams import MongoDBCollectionStream
@@ -174,6 +175,21 @@ class TapMongoDB(Tap):
             ),
         ),
         th.Property(
+            "document_layout",
+            th.StringType,
+            required=False,
+            default="object",
+            allowed_values=["object", "flat"],
+            description=(
+                "How documents are emitted. `object` (the default) emits each document as a single `document` "
+                "object. `flat` emits each document field declared in the stream's schema as its own column: declare "
+                "the fields as properties of the stream's catalog schema (e.g. with Meltano's `schema` extra). Values "
+                "of BSON types JSON Schema can't express (ObjectId, Decimal128, ...) in a `string` property are "
+                "converted to strings, a value of any other type that doesn't match its declared type fails the sync, "
+                "undeclared fields are dropped with a warning, and a missing field is null."
+            ),
+        ),
+        th.Property(
             "stream_maps",
             th.ObjectType(),
             required=False,
@@ -238,6 +254,21 @@ class TapMongoDB(Tap):
             prefix=self.config.get("prefix", None),
             collections=self.config["filter_collections"],
         )
+
+    @property
+    def input_catalog(self) -> Catalog | None:
+        """Get the input catalog, without `document` properties when using the flat document layout.
+
+        With the flat layout, the fields declared in each stream's schema replace the `document` object, so it's left
+        out of the streams' schemas and SCHEMA messages.
+        """
+        catalog = super().input_catalog
+        if catalog is None or self.config.get("document_layout") != "flat":
+            return catalog
+        catalog_dict = catalog.to_dict()
+        for stream in catalog_dict["streams"]:
+            stream["schema"].get("properties", {}).pop("document", None)
+        return Catalog.from_dict(catalog_dict)
 
     @property
     def catalog_dict(self) -> dict:

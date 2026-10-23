@@ -1,12 +1,12 @@
 """Native Arrow extraction for Arrow BATCH files.
 
 Documents are decoded from raw BSON batches with pymongoarrow, so most values never become Python objects. The record
-envelope (`replication_key`, `object_id`, `document`, ...) is the same as in RECORD mode, with `document` as a struct.
+envelope (`replication_key`, `object_id`, ...) is the same as in RECORD mode. With the default `object` document layout
+the document is a `document` struct; with the `flat` layout (see `tap_mongodb.flat`) each declared field is a column.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -20,6 +20,8 @@ from pymongoarrow.api import Schema
 from pymongoarrow.context import PyMongoArrowContext
 from pymongoarrow.types import ObjectIdType
 from singer_sdk.singerlib.json import serialize_json
+
+from tap_mongodb.flat import DeclaredField, as_record_string, mismatch_error
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -117,6 +119,37 @@ class DocumentPlan:
                 plan.as_json.append(name)
         return plan
 
+    @classmethod
+    def from_declared(cls, fields: list[DeclaredField], field_types: dict[str, set[str]]) -> DocumentPlan:
+        """Plan the conversion of declared fields, whose values already passed `check_declared_types`.
+
+        Args:
+            fields: The declared fields.
+            field_types: The `$type` names seen for each declared field.
+
+        Returns:
+            The conversion plan, which also decodes `_id` for the record envelope.
+        """
+        plan = cls(native={"_id": ObjectIdType()})
+        for declared in fields:
+            seen = field_types.get(declared.name, set()) - {"null", "missing"}
+            if declared.kind in {"integer", "number", "boolean", "date-time"}:
+                plan.native[declared.name] = {
+                    "integer": pa.int64(),
+                    "number": pa.float64(),
+                    "boolean": pa.bool_(),
+                    "date-time": pa.timestamp("ms"),
+                }[declared.kind]
+            elif declared.kind == "string" and seen <= {"string"}:
+                plan.native[declared.name] = pa.string()
+            elif declared.kind == "string" and seen == {"objectId"}:
+                plan.native[declared.name] = ObjectIdType()
+            elif declared.kind == "string":
+                plan.as_string.append(declared.name)
+            else:
+                plan.as_json.append(declared.name)
+        return plan
+
 
 def scan_field_types(collection: Collection, query: dict[str, Any]) -> dict[str, set[str]]:
     """Get the BSON types of each top-level field in the documents matching a query, server-side.
@@ -135,6 +168,83 @@ def scan_field_types(collection: Collection, query: dict[str, Any]) -> dict[str,
         {"$group": {"_id": "$field.k", "types": {"$addToSet": {"$type": "$field.v"}}}},
     ]
     return {row["_id"]: set(row["types"]) for row in collection.aggregate(pipeline, allowDiskUse=True)}
+
+
+def scan_declared_types(
+    collection: Collection,
+    query: dict[str, Any],
+    fields: list[DeclaredField],
+    deselected: list[str],
+) -> tuple[dict[str, set[str]], set[str]]:
+    """Get the BSON types of `_id` and the declared fields, and the undeclared top-level field names, server-side.
+
+    Args:
+        collection: The collection to scan.
+        query: The `find` filter.
+        fields: The declared fields.
+        deselected: Declared but deselected field names, which aren't reported as undeclared.
+
+    Returns:
+        The `$type` names seen for `_id` and each declared field (`missing` when absent), and the undeclared names.
+    """
+    names = ["_id", *(declared.name for declared in fields)]
+    aliases = {name: f"t{index}" for index, name in enumerate(names)}
+    pipeline: list[dict[str, Any]] = [
+        {"$match": query},
+        {
+            "$project": {
+                **{alias: {"$type": f"${name}"} for name, alias in aliases.items()},
+                "undeclared": {
+                    "$setDifference": [
+                        {"$map": {"input": {"$objectToArray": "$$ROOT"}, "in": "$$this.k"}},
+                        names + deselected,
+                    ],
+                },
+            },
+        },
+        {"$unwind": {"path": "$undeclared", "preserveNullAndEmptyArrays": True}},
+        {
+            "$group": {
+                "_id": None,
+                **{alias: {"$addToSet": f"${alias}"} for alias in aliases.values()},
+                "undeclared": {"$addToSet": "$undeclared"},
+            },
+        },
+    ]
+    result = next(collection.aggregate(pipeline, allowDiskUse=True), None)
+    if result is None:
+        return {}, set()
+    return {name: set(result[alias]) for name, alias in aliases.items()}, set(result["undeclared"])
+
+
+def check_declared_types(
+    collection: Collection,
+    query: dict[str, Any],
+    fields: list[DeclaredField],
+    field_types: dict[str, set[str]],
+    *,
+    stream_name: str,
+) -> None:
+    """Fail if a declared field has a value of a BSON type its declared type doesn't accept.
+
+    pymongoarrow can't be relied on for this: it silently truncates a double in an `int64` field, for example.
+
+    Raises:
+        DeclaredTypeError: Naming the field and an example document.
+    """
+    for declared in fields:
+        allowed = declared.allowed_types
+        if allowed is None:
+            continue
+        if disallowed := sorted(field_types.get(declared.name, set()) - allowed - {"null", "missing"}):
+            example = collection.find_one(
+                {"$and": [query, {declared.name: {"$type": disallowed}}]},
+                {"_id": 1, declared.name: 1},
+                sort=[("_id", ASCENDING)],
+            )
+            object_id = example["_id"] if example else "?"
+            bson_type = disallowed[0] if len(disallowed) == 1 else " or ".join(disallowed)
+            raise mismatch_error(declared, bson_type, stream_name=stream_name, object_id=object_id)
 
 
 def object_id_hex(array: pa.Array) -> pa.Array:
@@ -189,6 +299,10 @@ class ArrowExtractor:
     stream_name: str
     logger: Logger | LoggerAdapter[Any]
     add_record_metadata: bool = False
+    declared: list[DeclaredField] | None = None
+    """The selected declared fields with the `flat` document layout, or None for the `object` layout."""
+    deselected: list[str] = field(default_factory=list)
+    """Declared but deselected field names with the `flat` document layout, which aren't reported as undeclared."""
 
     def tables(self, start: ObjectId) -> Iterator[pa.Table]:
         """Yield the documents after `start`, in `_id` order, as Arrow tables.
@@ -211,12 +325,20 @@ class ArrowExtractor:
             return
 
         query = {"_id": {"$gt": start, "$lte": newest["_id"]}}
-        plan = DocumentPlan.from_field_types(
-            scan_field_types(self.collection, query),
-            stream_name=self.stream_name,
-            logger=self.logger,
-        )
-        if not isinstance(plan.native.get("_id"), ObjectIdType):
+        if self.declared is None:
+            field_types = scan_field_types(self.collection, query)
+            plan = DocumentPlan.from_field_types(field_types, stream_name=self.stream_name, logger=self.logger)
+        else:
+            field_types, undeclared = scan_declared_types(self.collection, query, self.declared, self.deselected)
+            if undeclared:
+                self.logger.warning(
+                    "Stream '%s' uses the flat document layout, so these undeclared document fields are dropped: %s",
+                    self.stream_name,
+                    ", ".join(sorted(undeclared)),
+                )
+            check_declared_types(self.collection, query, self.declared, field_types, stream_name=self.stream_name)
+            plan = DocumentPlan.from_declared(self.declared, field_types)
+        if field_types.get("_id", {"objectId"}) != {"objectId"}:
             msg = f"Incremental replication of stream '{self.stream_name}' requires every `_id` to be an ObjectId."
             raise TypeError(msg)
         schema = Schema(plan.native)
@@ -239,20 +361,13 @@ class ArrowExtractor:
         native = context.finish()
         self._check_silent_coercions(native, plan)
 
-        names: list[str] = []
-        columns: list[pa.Array] = []
-        for name in plan.native:
-            names.append(name)
-            columns.append(_conform(native[name].combine_chunks()))
-
+        fields = {name: _conform(native[name].combine_chunks()) for name in plan.native}
         if plan.python_fields:
             documents = bson.decode_all(raw_batch, codec_options)
             for name in plan.as_string:
-                names.append(name)
-                columns.append(pa.array([_as_string(doc.get(name)) for doc in documents], type=pa.string()))
+                fields[name] = pa.array([as_record_string(doc.get(name)) for doc in documents], type=pa.string())
             for name in plan.as_json:
-                names.append(name)
-                columns.append(pa.array([_as_json(doc.get(name)) for doc in documents], type=pa.json_()))
+                fields[name] = pa.array([_as_json(doc.get(name)) for doc in documents], type=pa.json_())
 
         object_ids = native["_id"].combine_chunks()
         hexes = object_id_hex(object_ids)
@@ -260,7 +375,12 @@ class ArrowExtractor:
         table = {
             "replication_key": incremental_ids(object_ids, hexes),
             "object_id": hexes,
-            "document": pa.StructArray.from_arrays(columns, names=names),
+        }
+        if self.declared is None:
+            table["document"] = pa.StructArray.from_arrays(list(fields.values()), names=list(fields))
+        else:
+            table.update((declared.name, fields[declared.name]) for declared in self.declared)
+        table |= {
             "operation_type": pa.nulls(rows, pa.string()),
             "cluster_time": pa.nulls(rows, _TIMESTAMP_TYPE),
             "namespace": pa.array(
@@ -323,14 +443,6 @@ def _conform(column: pa.Array) -> pa.Array:
     if pa.types.is_timestamp(column.type):
         return column.cast(pa.timestamp(column.type.unit, tz="UTC"))
     return column
-
-
-def _as_string(value: Any) -> str | None:
-    """Convert a scalar to the string RECORD mode emits for it, e.g. `"1.5"` for `Decimal128("1.5")`."""
-    if value is None:
-        return None
-    emitted = json.loads(serialize_json(value))
-    return emitted if isinstance(emitted, str) else serialize_json(value)
 
 
 def _as_json(value: Any) -> str | None:
