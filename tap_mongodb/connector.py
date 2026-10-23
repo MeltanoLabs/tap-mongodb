@@ -26,6 +26,7 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         datetime_conversion: str,
         prefix: str | None = None,
         collections: list[str] | None = None,
+        add_record_metadata: bool = False,
     ) -> None:
         self._connection_string = connection_string
         self._options = options
@@ -33,6 +34,7 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         self._datetime_conversion: str = datetime_conversion.upper()
         self._prefix: str | None = prefix
         self._collections = collections
+        self._add_record_metadata = add_record_metadata
         self._logger: Logger = getLogger(__name__)
         self._version: MongoVersion | None = None
 
@@ -78,19 +80,32 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
 
         return delimiter.join(parts).lower()
 
+    def _get_schema(self) -> dict[str, Any]:
+        """Return the stream schema, with `_sdc_*` properties only if record metadata is enabled.
+
+        Targets that load BATCH files (e.g. target-postgres) compare the schema's properties against
+        the columns of the files, so advertising metadata properties that are never emitted breaks them.
+        """
+        if self._add_record_metadata:
+            return SCHEMA
+
+        properties = {name: prop for name, prop in SCHEMA["properties"].items() if not name.startswith("_sdc_")}
+        return {**SCHEMA, "properties": properties}
+
     def discover_catalog_entry(self, collection_name: str) -> CatalogEntry:
         """Create `CatalogEntry` object for the given collection."""
         unique_stream_id = self.get_fully_qualified_name(collection_name, prefix=self._prefix)
+        schema = self._get_schema()
 
         return CatalogEntry(
             tap_stream_id=unique_stream_id,
             stream=unique_stream_id,
             table=collection_name,
             key_properties=["replication_key"],
-            schema=Schema.from_dict(SCHEMA),
+            schema=Schema.from_dict(schema),
             replication_method=None,  # Must be defined by user
             metadata=MetadataMapping.get_standard_metadata(
-                schema=SCHEMA,
+                schema=schema,
                 replication_method=REPLICATION_INCREMENTAL,  # User can override this
                 key_properties=["replication_key"],
                 valid_replication_keys=["replication_key"],  # Known valid replication keys

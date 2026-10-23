@@ -253,6 +253,7 @@ class TapMongoDB(Tap):
             self.config.get("datetime_conversion"),
             prefix=self.config.get("prefix", None),
             collections=self.config["filter_collections"],
+            add_record_metadata=self.config.get("add_record_metadata", False),
         )
 
     @property
