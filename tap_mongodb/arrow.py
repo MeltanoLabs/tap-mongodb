@@ -43,6 +43,16 @@ NATIVE_TYPES: dict[str, pa.DataType] = {
 # Values of these BSON types are serialized to JSON like RECORD mode does, typed with Arrow's canonical JSON type
 JSON_TYPES = frozenset({"object", "array"})
 
+# BSON types pymongoarrow silently coerces instead of raising `TypeError`: `int64` truncates doubles (1.5 becomes 1) and
+# turns booleans into 1/0, and `float64` turns booleans into 1.0/0.0
+_SILENTLY_COERCED: list[tuple[pa.DataType, list[str]]] = [(pa.int64(), ["double", "bool"]), (pa.float64(), ["bool"])]
+
+
+def _silently_coerced(arrow_type: pa.DataType) -> list[str]:
+    """BSON types pymongoarrow silently coerces to `arrow_type`."""
+    return next((types for coerced, types in _SILENTLY_COERCED if arrow_type == coerced), [])
+
+
 _HEX_DIGITS = np.frombuffer(b"0123456789abcdef", dtype=np.uint8)
 _NAMESPACE_TYPE = pa.struct([("database", pa.string()), ("collection", pa.string())])
 _TIMESTAMP_TYPE = pa.timestamp("us", tz="UTC")
@@ -194,7 +204,7 @@ class ArrowExtractor:
 
         Raises:
             TypeError: If `_id` isn't always an ObjectId.
-            RuntimeError: If a field's type changed after the type scan.
+            RuntimeError: If a field's type changed after the type scan, e.g. a document was updated during the sync.
         """
         newest = self.collection.find_one({"_id": {"$gt": start}}, {"_id": 1}, sort=[("_id", DESCENDING)])
         if newest is None:
@@ -227,6 +237,7 @@ class ArrowExtractor:
         context = PyMongoArrowContext(schema, codec_options)
         context.process_bson_stream(raw_batch)
         native = context.finish()
+        self._check_silent_coercions(native, plan)
 
         names: list[str] = []
         columns: list[pa.Array] = []
@@ -260,6 +271,46 @@ class ArrowExtractor:
         if self.add_record_metadata:
             table["_sdc_batched_at"] = pa.array([datetime.now(timezone.utc)] * rows, type=_TIMESTAMP_TYPE)
         return pa.table(table)
+
+    def _check_silent_coercions(self, native: pa.Table, plan: DocumentPlan) -> None:
+        """Fail if a numeric column got a value pymongoarrow coerces silently instead of raising `TypeError`.
+
+        The type scan rules these values out when the sync starts, but a document updated during the sync can still
+        bring one, so check the batch's documents on the server: one indexed query per batch with numeric columns.
+
+        Raises:
+            RuntimeError: Naming the field, the value's BSON type and the document.
+        """
+        checks = {name: types for name, arrow_type in plan.native.items() if (types := _silently_coerced(arrow_type))}
+        if not checks or native.num_rows == 0:
+            return
+
+        object_ids = native["_id"].combine_chunks()
+        batch_range = {"_id": {"$gte": object_ids[0].as_py(), "$lte": object_ids[-1].as_py()}}
+        clauses = [_has_type(name, types) for name, types in checks.items()]
+        document = self.collection.find_one({**batch_range, "$or": clauses}, sort=[("_id", ASCENDING)])
+        if document is None:
+            return
+
+        for name, types in checks.items():
+            value = document.get(name)
+            bson_type = "bool" if isinstance(value, bool) else "double" if isinstance(value, float) else None
+            if bson_type in types:
+                msg = (
+                    f"Field '{name}' in stream '{self.stream_name}' has a value of BSON type '{bson_type}' in document "
+                    f"{document['_id']}, which differs from the types seen when the sync started, probably because "
+                    "the document was updated during the sync. Run the sync again."
+                )
+                raise RuntimeError(msg)
+
+
+def _has_type(name: str, types: list[str]) -> dict[str, Any]:
+    """A filter matching documents whose top-level field `name` has one of the BSON `types`."""
+    if "." in name or name.startswith("$"):
+        # Field names that `find` would read as paths or operators
+        field_value = {"$getField": {"field": {"$literal": name}, "input": "$$ROOT"}}
+        return {"$expr": {"$in": [{"$type": field_value}, types]}}
+    return {name: {"$type": types}}
 
 
 def _conform(column: pa.Array) -> pa.Array:

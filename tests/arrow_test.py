@@ -22,6 +22,7 @@ from singer_sdk.contrib.batch_decoder_arrow import ArrowReader
 from singer_sdk.helpers._batch import BaseBatchFileEncoding
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED
 
+from tap_mongodb import arrow
 from tap_mongodb.arrow import DocumentPlan, incremental_ids, object_id_hex
 from tap_mongodb.streams import MongoDBCollectionStream
 from tap_mongodb.tap import TapMongoDB
@@ -300,3 +301,28 @@ def _sync_with_metadata(collection, tmp_path) -> list[dict]:
     with redirect_stdout(buf):
         TapMongoDB(config=config, parse_env_config=False).sync_all()
     return [json.loads(line) for line in buf.getvalue().splitlines()]
+
+
+@pytest.mark.parametrize(
+    "seed,update,bson_type",
+    [
+        pytest.param({"count": 1}, {"count": 1.5}, "double", id="int-to-double"),
+        pytest.param({"count": 1}, {"count": True}, "bool", id="int-to-bool"),
+        pytest.param({"ratio": 0.5}, {"ratio": True}, "bool", id="double-to-bool"),
+    ],
+)
+def test_arrow_batches_fail_on_silently_coerced_update(collection, tmp_path, monkeypatch, seed, update, bson_type):
+    """A document updated during the sync can't be silently truncated or coerced by pymongoarrow."""
+    collection.insert_many([dict(seed) for _ in range(3)])
+    updated = collection.find_one(sort=[("_id", -1)])["_id"]
+    scan = arrow.scan_field_types
+
+    def scan_then_update(*args, **kwargs):
+        field_types = scan(*args, **kwargs)
+        collection.update_one({"_id": updated}, {"$set": update})  # After the scan, before extraction
+        return field_types
+
+    monkeypatch.setattr(arrow, "scan_field_types", scan_then_update)
+    (field,) = update
+    with pytest.raises(RuntimeError, match=f"Field '{field}' .* BSON type '{bson_type}' in document {updated}"):
+        _sync(collection, tmp_path, batch=True)
