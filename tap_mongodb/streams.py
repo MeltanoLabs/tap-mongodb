@@ -18,6 +18,7 @@ from singer_sdk.helpers._util import utc_now
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED, Stream, TypeConformanceLevel
 
 from tap_mongodb.arrow import ArrowExtractor
+from tap_mongodb.flat import DeclaredField, declared_fields, flatten_document
 from tap_mongodb.types import IncrementalId
 
 if TYPE_CHECKING:
@@ -93,11 +94,54 @@ class MongoDBCollectionStream(Stream):
         self._connector: MongoDBConnector = connector
         self.catalog_entry = catalog_entry
         self._collection_name: str = self.catalog_entry["table_name"]
+        self._declared: list[DeclaredField] = []
+        self._deselected: list[str] = []
+        self._warned_undeclared: set[str] = set()
         super().__init__(
             tap=tap,
             schema=self.catalog_entry["schema"],
             name=self.catalog_entry["tap_stream_id"],
         )
+
+    @property
+    def is_flat_layout(self) -> bool:
+        """Whether each declared document field is its own column (see `tap_mongodb.flat`)."""
+        return self.config.get("document_layout") == "flat"
+
+    def _selected_declared_fields(self) -> tuple[list[DeclaredField], list[str]]:
+        """The document fields declared in the stream schema, for the flat document layout.
+
+        Returns:
+            The selected declared fields, and the names of the deselected ones.
+        """
+        fields = declared_fields(self.schema.get("properties", {}), stream_name=self.name)
+        selected = [declared for declared in fields if self.mask["properties", declared.name]]
+        deselected = [declared.name for declared in fields if not self.mask["properties", declared.name]]
+        if not selected:
+            msg = f"Stream '{self.name}' uses the flat document layout, but all of its declared fields are deselected."
+            raise ValueError(msg)
+        return selected, deselected
+
+    def post_process(self, row: dict, context: dict | None = None) -> dict | None:
+        """With the flat document layout, replace `document` with its declared fields' values."""
+        if not self.is_flat_layout:
+            return row
+
+        values, undeclared = flatten_document(
+            row.pop("document", None),
+            self._declared,
+            stream_name=self.name,
+            deselected=self._deselected,
+        )
+        if new := undeclared - self._warned_undeclared:
+            self._warned_undeclared |= new
+            self.logger.warning(
+                "Stream '%s' uses the flat document layout, so these undeclared document fields are dropped: %s",
+                self.name,
+                ", ".join(sorted(new)),
+            )
+        row.update(values)
+        return row
 
     @property
     def primary_keys(self) -> list[str] | None:
@@ -237,11 +281,15 @@ class MongoDBCollectionStream(Stream):
             logger=self.logger,
             add_record_metadata=self.config.get("add_record_metadata", False),
         )
+        if self.is_flat_layout:
+            extractor.declared, extractor.deselected = self._selected_declared_fields()
         return extractor.tables(start)
 
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
         # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+        if self.is_flat_layout:
+            self._declared, self._deselected = self._selected_declared_fields()
         bookmark: str | None = self.get_starting_replication_key_value(context)
         should_add_metadata: bool = self.config.get("add_record_metadata", False)
         collection: Collection = self._connector.database[self._collection_name]
