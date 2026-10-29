@@ -84,6 +84,17 @@ def test_databases_takes_precedence_over_database(databases):
     ]
 
 
+def test_stream_name_prepends_the_database_as_named(client):
+    database = f"TapMongoDB_Case_{uuid4().hex[:8]}"
+    client[database]["Docs"].insert_one({})
+    try:
+        streams = _streams({"databases": [database], "prefix": "eu"})
+    finally:
+        client.drop_database(database)
+
+    assert [stream["tap_stream_id"] for stream in streams] == [f"{database}-eu_docs"]
+
+
 def test_discovery_fails_when_collections_share_a_stream_name(client):
     base = f"tap_mongodb_clash_{uuid4().hex[:8]}"
     clashing = {f"{base}-x": "docs", base: "x-docs"}

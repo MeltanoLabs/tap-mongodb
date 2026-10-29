@@ -101,8 +101,9 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
 
     def discover_catalog_entry(self, database_name: str, collection_name: str) -> CatalogEntry:
         """Create `CatalogEntry` object for the given collection."""
-        name = f"{database_name}-{collection_name}" if self._qualify_stream_names else collection_name
-        unique_stream_id = self.get_fully_qualified_name(name, prefix=self._prefix)
+        unique_stream_id = self.get_fully_qualified_name(collection_name, prefix=self._prefix)
+        if self._qualify_stream_names:
+            unique_stream_id = f"{database_name}-{unique_stream_id}"
         schema = self._get_schema()
 
         return CatalogEntry(
