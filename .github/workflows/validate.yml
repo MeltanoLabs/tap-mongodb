@@ -103,15 +103,11 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync
-      - name: Start MongoDB
-        uses: supercharge/mongodb-github-action@315db7fe45ac2880b7758f1933e6e5d59afd5e94  # 1.12.1
-        with:
-          mongodb-version: ${{ matrix.mongo-version }}
-          mongodb-username: admin
-          mongodb-password: password
-          mongodb-db: test
       - name: Test with pytest
+        # The mongodb_uri fixture starts a throwaway MongoDB container with testcontainers
         run: uv run pytest
+        env:
+          TAP_MONGODB_TEST_VERSION: ${{ matrix.mongo-version }}
 
   integration:
     name: Meltano integration test 🐉
@@ -126,17 +122,23 @@ jobs:
         mongodb-version:
           - '7.0'
           - '8.0'
+    services:
+      mongodb:
+        image: mongo:${{ matrix.mongodb-version }}
+        env:
+          MONGO_INITDB_ROOT_USERNAME: admin
+          MONGO_INITDB_ROOT_PASSWORD: password
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - name: Start MongoDB
-        uses: supercharge/mongodb-github-action@315db7fe45ac2880b7758f1933e6e5d59afd5e94  # 1.12.1
-        with:
-          mongodb-version: ${{ matrix.mongodb-version }}
-          mongodb-username: ${{ env.USERNAME }}
-          mongodb-password: ${{ env.PASSWORD }}
-          mongodb-db: ${{ env.DATABASE }}
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
       - name: Install Meltano
         run: uv tool install --with meltano=="${MELTANO_VERSION}" meltano

@@ -6,7 +6,6 @@ import io
 import json
 import logging
 import math
-import os
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
@@ -15,8 +14,6 @@ from uuid import uuid4
 import pyarrow as pa
 import pytest
 from bson import Binary, Decimal128, Int64, ObjectId
-from pymongo import MongoClient
-from pymongo.errors import PyMongoError
 from pymongoarrow.types import ObjectIdType
 from singer_sdk.contrib.batch_decoder_arrow import ArrowReader
 from singer_sdk.helpers._batch import BaseBatchFileEncoding
@@ -27,8 +24,6 @@ from tap_mongodb.arrow import DocumentPlan, incremental_ids, object_id_hex
 from tap_mongodb.streams import MongoDBCollectionStream
 from tap_mongodb.tap import TapMongoDB
 from tap_mongodb.types import IncrementalId
-
-MONGODB_URI = os.environ.get("TAP_MONGODB_TEST_CONNECTION_STRING", "mongodb://admin:password@localhost:27017/")
 
 
 def test_document_plan(caplog: pytest.LogCaptureFixture):
@@ -115,16 +110,10 @@ def test_batch_config_jsonl_change_streams_unchanged():
 
 
 @pytest.fixture(scope="module")
-def database():
-    client: MongoClient = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=2000)
-    try:
-        client.admin.command("ping")
-    except PyMongoError:
-        pytest.skip(f"MongoDB isn't reachable at {MONGODB_URI}")
-    db = client[f"tap_mongodb_arrow_{uuid4().hex[:8]}"]
+def database(mongodb_client):
+    db = mongodb_client[f"tap_mongodb_arrow_{uuid4().hex[:8]}"]
     yield db
-    client.drop_database(db.name)
-    client.close()
+    mongodb_client.drop_database(db.name)
 
 
 @pytest.fixture
@@ -134,9 +123,9 @@ def collection(database):
     coll.drop()
 
 
-def _sync(collection, tmp_path, *, batch: bool, state: dict | None = None) -> list[dict]:
+def _sync(mongodb_uri, collection, tmp_path, *, batch: bool, state: dict | None = None) -> list[dict]:
     config = {
-        "mongodb_connection_string": MONGODB_URI,
+        "mongodb_connection_string": mongodb_uri,
         "database": collection.database.name,
         "filter_collections": [collection.name],
     }
@@ -196,7 +185,7 @@ def _with_sql_nulls(record_document: dict, fields: list[str]) -> dict:
     return {name: record_document.get(name) for name in fields}
 
 
-def test_arrow_batches_match_record_mode(collection, tmp_path, caplog: pytest.LogCaptureFixture):
+def test_arrow_batches_match_record_mode(mongodb_uri, collection, tmp_path, caplog: pytest.LogCaptureFixture):
     collection.insert_many(
         [
             {
@@ -219,10 +208,10 @@ def test_arrow_batches_match_record_mode(collection, tmp_path, caplog: pytest.Lo
         ],
     )
 
-    record_messages = _sync(collection, tmp_path, batch=False)
+    record_messages = _sync(mongodb_uri, collection, tmp_path, batch=False)
     records = [m["record"] for m in record_messages if m["type"] == "RECORD"]
     with caplog.at_level(logging.WARNING):
-        batch_messages = _sync(collection, tmp_path, batch=True)
+        batch_messages = _sync(mongodb_uri, collection, tmp_path, batch=True)
     rows = _batch_rows(batch_messages)
 
     assert not [m for m in batch_messages if m["type"] == "RECORD"]
@@ -252,10 +241,10 @@ def test_arrow_batches_match_record_mode(collection, tmp_path, caplog: pytest.Lo
         assert _normalize_batch_document(document, set()) == _with_sql_nulls(record["document"], list(document))
 
 
-def test_arrow_batches_state_and_resume(collection, tmp_path):
+def test_arrow_batches_state_and_resume(mongodb_uri, collection, tmp_path):
     collection.insert_many([{"count": i} for i in range(250)])
 
-    messages = _sync(collection, tmp_path, batch=True)
+    messages = _sync(mongodb_uri, collection, tmp_path, batch=True)
     batches = [i for i, m in enumerate(messages) if m["type"] == "BATCH"]
     assert len(batches) == 3  # 100, 100 and 50 rows
     bookmarks = [messages[i + 1]["value"]["bookmarks"][collection.name.lower()] for i in batches]
@@ -268,30 +257,30 @@ def test_arrow_batches_state_and_resume(collection, tmp_path):
 
     # Resuming from the final state extracts only documents inserted since
     state = next(m for m in reversed(messages) if m["type"] == "STATE")["value"]
-    assert not _batch_rows(_sync(collection, tmp_path, batch=True, state=state))
+    assert not _batch_rows(_sync(mongodb_uri, collection, tmp_path, batch=True, state=state))
     collection.insert_one({"count": 250})
-    resumed = _batch_rows(_sync(collection, tmp_path, batch=True, state=state))
+    resumed = _batch_rows(_sync(mongodb_uri, collection, tmp_path, batch=True, state=state))
     assert [row["document"]["count"] for row in resumed] == [250]
 
 
-def test_arrow_batches_empty_collection(collection, tmp_path):
+def test_arrow_batches_empty_collection(mongodb_uri, collection, tmp_path):
     collection.insert_one({"count": 1})
     collection.delete_many({})
-    assert not _batch_rows(_sync(collection, tmp_path, batch=True))
+    assert not _batch_rows(_sync(mongodb_uri, collection, tmp_path, batch=True))
 
 
-def test_arrow_batches_add_record_metadata(collection, tmp_path):
+def test_arrow_batches_add_record_metadata(mongodb_uri, collection, tmp_path):
     collection.insert_one({"count": 1})
-    config_messages = _sync_with_metadata(collection, tmp_path)
+    config_messages = _sync_with_metadata(mongodb_uri, collection, tmp_path)
     (row,) = _batch_rows(config_messages)
     assert isinstance(row["_sdc_batched_at"], datetime)
     assert row["_sdc_batched_at"].tzinfo is not None
     assert row["_sdc_batched_at"] <= datetime.now(timezone.utc)
 
 
-def _sync_with_metadata(collection, tmp_path) -> list[dict]:
+def _sync_with_metadata(mongodb_uri, collection, tmp_path) -> list[dict]:
     config = {
-        "mongodb_connection_string": MONGODB_URI,
+        "mongodb_connection_string": mongodb_uri,
         "database": collection.database.name,
         "filter_collections": [collection.name],
         "add_record_metadata": True,
@@ -311,7 +300,9 @@ def _sync_with_metadata(collection, tmp_path) -> list[dict]:
         pytest.param({"ratio": 0.5}, {"ratio": True}, "bool", id="double-to-bool"),
     ],
 )
-def test_arrow_batches_fail_on_silently_coerced_update(collection, tmp_path, monkeypatch, seed, update, bson_type):
+def test_arrow_batches_fail_on_silently_coerced_update(
+    mongodb_uri, collection, tmp_path, monkeypatch, seed, update, bson_type
+):
     """A document updated during the sync can't be silently truncated or coerced by pymongoarrow."""
     collection.insert_many([dict(seed) for _ in range(3)])
     updated = collection.find_one(sort=[("_id", -1)])["_id"]
@@ -325,4 +316,4 @@ def test_arrow_batches_fail_on_silently_coerced_update(collection, tmp_path, mon
     monkeypatch.setattr(arrow, "scan_field_types", scan_then_update)
     (field,) = update
     with pytest.raises(RuntimeError, match=f"Field '{field}' .* BSON type '{bson_type}' in document {updated}"):
-        _sync(collection, tmp_path, batch=True)
+        _sync(mongodb_uri, collection, tmp_path, batch=True)
