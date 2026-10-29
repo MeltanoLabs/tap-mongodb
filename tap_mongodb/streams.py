@@ -93,6 +93,8 @@ class MongoDBCollectionStream(Stream):
         """
         self._connector: MongoDBConnector = connector
         self.catalog_entry = catalog_entry
+        # A catalog discovered before multiple databases were supported has no database name.
+        self._database_name: str = self.catalog_entry.get("database_name") or tap.config["database"]
         self._collection_name: str = self.catalog_entry["table_name"]
         self._declared: list[DeclaredField] = []
         self._deselected: list[str] = []
@@ -276,7 +278,7 @@ class MongoDBCollectionStream(Stream):
         bookmark: str | None = self.get_starting_replication_key_value(context)
         start = to_object_id(bookmark or self.config.get("start_date", DEFAULT_START_DATE))
         extractor = ArrowExtractor(
-            collection=self._connector.database[self._collection_name],
+            collection=self._connector.mongo_client[self._database_name][self._collection_name],
             stream_name=self.name,
             logger=self.logger,
             add_record_metadata=self.config.get("add_record_metadata", False),
@@ -292,7 +294,7 @@ class MongoDBCollectionStream(Stream):
             self._declared, self._deselected = self._selected_declared_fields()
         bookmark: str | None = self.get_starting_replication_key_value(context)
         should_add_metadata: bool = self.config.get("add_record_metadata", False)
-        collection: Collection = self._connector.database[self._collection_name]
+        collection: Collection = self._connector.mongo_client[self._database_name][self._collection_name]
         self.logger.info(
             "replication method: %s, bookmark: %s, context: %s",
             self.replication_method,

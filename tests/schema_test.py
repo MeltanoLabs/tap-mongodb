@@ -9,7 +9,7 @@ def _connector(*, add_record_metadata: bool) -> MongoDBConnector:
     return MongoDBConnector(
         "mongodb://localhost:27017",
         {},
-        "db",
+        ["db"],
         "datetime",
         add_record_metadata=add_record_metadata,
     )
@@ -18,7 +18,7 @@ def _connector(*, add_record_metadata: bool) -> MongoDBConnector:
 @pytest.mark.parametrize("add_record_metadata", [False, True])
 def test_sdc_properties_only_when_metadata_enabled(add_record_metadata: bool):
     """`_sdc_*` properties should only be advertised if they will actually be emitted."""
-    entry = _connector(add_record_metadata=add_record_metadata).discover_catalog_entry("things")
+    entry = _connector(add_record_metadata=add_record_metadata).discover_catalog_entry("db", "things")
     sdc_properties = {name for name in entry.schema.properties if name.startswith("_sdc_")}
 
     if add_record_metadata:

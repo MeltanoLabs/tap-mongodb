@@ -25,10 +25,21 @@ class TapMongoDB(Tap):
 
     config_jsonschema = th.PropertiesList(
         th.Property(
+            "databases",
+            th.ArrayType(th.StringType),
+            required=False,
+            description=(
+                "Databases from which records will be extracted (default: all except `admin`, `local` and `config`). "
+                "Takes precedence over `database`. Unless exactly one database is selected, each stream is named "
+                "`<database>-<collection>`."
+            ),
+        ),
+        th.Property(
             "database",
             th.StringType,
-            required=True,
-            description="Database name from which records will be extracted.",
+            required=False,
+            deprecated=True,
+            description="Database name from which records will be extracted. Deprecated: use `databases` instead.",
         ),
         th.Property(
             "mongodb_connection_string",
@@ -246,10 +257,13 @@ class TapMongoDB(Tap):
     @cached_property
     def connector(self) -> MongoDBConnector:
         """Get MongoDBConnector instance. Instance is cached and reused."""
+        databases = self.config.get("databases")
+        if not databases and self.config.get("database"):
+            databases = [self.config["database"]]
         return MongoDBConnector(
             self._get_mongo_connection_string(),
             self._get_mongo_options(),
-            self.config.get("database"),
+            databases or [],
             self.config.get("datetime_conversion"),
             prefix=self.config.get("prefix", None),
             collections=self.config["filter_collections"],
