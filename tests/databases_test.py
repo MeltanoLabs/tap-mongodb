@@ -95,19 +95,6 @@ def test_stream_name_prepends_the_database_as_named(client):
     assert [stream["tap_stream_id"] for stream in streams] == [f"{database}-eu_docs"]
 
 
-def test_discovery_fails_when_collections_share_a_stream_name(client):
-    base = f"tap_mongodb_clash_{uuid4().hex[:8]}"
-    clashing = {f"{base}-x": "docs", base: "x-docs"}
-    for database, collection in clashing.items():
-        client[database][collection].insert_one({})
-    try:
-        with pytest.raises(RuntimeError, match=f"{base}-x-docs"):
-            _streams({"databases": list(clashing)})
-    finally:
-        for database in clashing:
-            client.drop_database(database)
-
-
 def _records(config: dict, catalog: dict | None = None) -> dict[str, str]:
     """Sync and return the `source` of each stream's record."""
     config = {"mongodb_connection_string": MONGODB_URI, **config}

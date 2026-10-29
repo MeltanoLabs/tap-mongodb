@@ -1,6 +1,5 @@
 """MongoDB/DocumentDB connector utility"""
 
-from collections import defaultdict
 from functools import cached_property
 from logging import Logger, getLogger
 from typing import Any, TypeAlias
@@ -134,16 +133,7 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         database_names = self._databases or [
             name for name in self.mongo_client.list_database_names() if name not in SYSTEM_DATABASES
         ]
-        entries = [entry for name in database_names for entry in self._discover_database(self.mongo_client[name])]
-
-        namespaces: defaultdict[str, list[str]] = defaultdict(list)
-        for entry in entries:
-            namespaces[entry["tap_stream_id"]].append(f"{entry['database_name']}.{entry['table_name']}")
-        if clashes := {name: found for name, found in namespaces.items() if len(found) > 1}:
-            msg = f"Collections map to the same stream name: {clashes}. Exclude all but one of each."
-            raise RuntimeError(msg)
-
-        return entries
+        return [entry for name in database_names for entry in self._discover_database(self.mongo_client[name])]
 
     def _discover_database(self, database: Database) -> list[dict[str, Any]]:
         """Return the catalog entries for the collections in one database."""
