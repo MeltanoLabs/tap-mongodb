@@ -63,6 +63,17 @@ def test_database_keeps_stream_names(databases):
     assert [(stream["database_name"], stream["tap_stream_id"]) for stream in streams] == [(names[0], collection)]
 
 
+@pytest.mark.parametrize("database", [None, ""])
+def test_unset_database_selects_every_database(databases, database):
+    names, collection = databases
+
+    streams = _streams({"database": database, "filter_collections": [collection]})
+
+    assert {(stream["database_name"], stream["tap_stream_id"]) for stream in streams} == {
+        (name, f"{name}-{collection}") for name in names
+    }
+
+
 def test_databases_takes_precedence_over_database(databases):
     names, collection = databases
 
