@@ -12,8 +12,17 @@ from pymongo.errors import PyMongoError
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from testcontainers.community.mongodb import MongoDbContainer
+
 MONGODB_IMAGE = "mongo:{version}"
 DEFAULT_MONGODB_VERSION = "8.0"
+
+
+def _print_container_logs(container: MongoDbContainer) -> None:
+    try:
+        print(container.get_wrapped_container().logs().decode(errors="replace"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"Couldn't read container logs: {exc!r}")
 
 
 @pytest.fixture(scope="session")
@@ -31,11 +40,12 @@ def mongodb_uri() -> Iterator[str]:
     from testcontainers.community.mongodb import MongoDbContainer
 
     version = os.environ.get("TAP_MONGODB_TEST_VERSION", DEFAULT_MONGODB_VERSION)
+    container = MongoDbContainer(MONGODB_IMAGE.format(version=version))
     try:
-        container = MongoDbContainer(MONGODB_IMAGE.format(version=version))
         container.start()
     except Exception as exc:
         if os.environ.get("CI"):
+            _print_container_logs(container)
             raise
         pytest.skip(f"Couldn't start a MongoDB container ({exc!r}); set TAP_MONGODB_TEST_CONNECTION_STRING instead")
 
