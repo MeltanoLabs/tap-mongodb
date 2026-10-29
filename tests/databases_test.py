@@ -73,6 +73,19 @@ def test_databases_takes_precedence_over_database(databases):
     ]
 
 
+def test_discovery_fails_when_collections_share_a_stream_name(client):
+    base = f"tap_mongodb_clash_{uuid4().hex[:8]}"
+    clashing = {f"{base}-x": "docs", base: "x-docs"}
+    for database, collection in clashing.items():
+        client[database][collection].insert_one({})
+    try:
+        with pytest.raises(RuntimeError, match=f"{base}-x-docs"):
+            _streams({"databases": list(clashing)})
+    finally:
+        for database in clashing:
+            client.drop_database(database)
+
+
 def test_sync_reads_each_stream_from_its_database(databases):
     names, collection = databases
     config = {"mongodb_connection_string": MONGODB_URI, "databases": names, "filter_collections": [collection]}
