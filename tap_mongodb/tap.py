@@ -262,16 +262,16 @@ class TapMongoDB(Tap):
         """Get MongoDBConnector instance. Instance is cached and reused."""
         databases = self.config["databases"]
         # `database` predates `databases`, so it keeps the stream names from before them.
-        use_database = not databases and bool(self.config.get("database"))
+        legacy_database = not databases and "database" in self.config
         return MongoDBConnector(
             self._get_mongo_connection_string(),
             self._get_mongo_options(),
-            [self.config["database"]] if use_database else databases,
+            [self.config["database"]] if legacy_database else databases,
             self.config.get("datetime_conversion"),
             prefix=self.config.get("prefix", None),
             collections=self.config["filter_collections"],
             add_record_metadata=self.config.get("add_record_metadata", False),
-            qualify_stream_names=not use_database,
+            qualify_stream_names=not legacy_database,
         )
 
     @property
