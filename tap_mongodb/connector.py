@@ -29,6 +29,7 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         prefix: str | None = None,
         collections: list[str] | None = None,
         add_record_metadata: bool = False,
+        qualify_stream_names: bool = True,
     ) -> None:
         self._connection_string = connection_string
         self._options = options
@@ -37,6 +38,7 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         self._prefix: str | None = prefix
         self._collections = collections
         self._add_record_metadata = add_record_metadata
+        self._qualify_stream_names = qualify_stream_names
         self._logger: Logger = getLogger(__name__)
         self._version: MongoVersion | None = None
 
@@ -91,8 +93,7 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
 
     def discover_catalog_entry(self, database_name: str, collection_name: str) -> CatalogEntry:
         """Create `CatalogEntry` object for the given collection."""
-        # One selected database keeps the stream names from before multiple databases were supported.
-        name = collection_name if len(self._databases) == 1 else f"{database_name}-{collection_name}"
+        name = f"{database_name}-{collection_name}" if self._qualify_stream_names else collection_name
         unique_stream_id = self.get_fully_qualified_name(name, prefix=self._prefix)
         schema = self._get_schema()
 

@@ -68,7 +68,9 @@ def test_databases_takes_precedence_over_database(databases):
 
     streams = _streams({"database": names[0], "databases": [names[1]], "filter_collections": [collection]})
 
-    assert [(stream["database_name"], stream["tap_stream_id"]) for stream in streams] == [(names[1], collection)]
+    assert [(stream["database_name"], stream["tap_stream_id"]) for stream in streams] == [
+        (names[1], f"{names[1]}-{collection}")
+    ]
 
 
 def test_sync_reads_each_stream_from_its_database(databases):
