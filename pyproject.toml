@@ -50,6 +50,7 @@ dev = [
   "pytest>=9.1.1",
   "ruff>=0.16",
   "singer-sdk[testing]",
+  "testcontainers[mongodb]>=4.15",
 ]
 
 [tool.hatch.version]

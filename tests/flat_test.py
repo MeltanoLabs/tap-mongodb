@@ -6,23 +6,18 @@ import io
 import json
 import logging
 import math
-import os
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
 from bson import Decimal128, Int64, ObjectId
-from pymongo import MongoClient
-from pymongo.errors import PyMongoError
 from singer_sdk.contrib.batch_decoder_arrow import ArrowReader
 from singer_sdk.helpers._batch import BaseBatchFileEncoding
 
 from tap_mongodb import arrow
 from tap_mongodb.flat import DeclaredField, DeclaredTypeError, declared_fields, flatten_document
 from tap_mongodb.tap import TapMongoDB
-
-MONGODB_URI = os.environ.get("TAP_MONGODB_TEST_CONNECTION_STRING", "mongodb://admin:password@localhost:27017/")
 
 DECLARED = {
     "age": {"type": ["integer", "null"]},
@@ -131,16 +126,10 @@ def test_flatten_document_none():
 
 
 @pytest.fixture(scope="module")
-def database():
-    client: MongoClient = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=2000)
-    try:
-        client.admin.command("ping")
-    except PyMongoError:
-        pytest.skip(f"MongoDB isn't reachable at {MONGODB_URI}")
-    db = client[f"tap_mongodb_flat_{uuid4().hex[:8]}"]
+def database(mongodb_client):
+    db = mongodb_client[f"tap_mongodb_flat_{uuid4().hex[:8]}"]
     yield db
-    client.drop_database(db.name)
-    client.close()
+    mongodb_client.drop_database(db.name)
 
 
 @pytest.fixture
@@ -150,9 +139,11 @@ def collection(database):
     coll.drop()
 
 
-def _sync(collection, tmp_path, *, batch: bool, declared: dict, deselected: tuple[str, ...] = ()) -> list[dict]:
+def _sync(
+    mongodb_uri, collection, tmp_path, *, batch: bool, declared: dict, deselected: tuple[str, ...] = ()
+) -> list[dict]:
     config = {
-        "mongodb_connection_string": MONGODB_URI,
+        "mongodb_connection_string": mongodb_uri,
         "database": collection.database.name,
         "filter_collections": [collection.name],
         "document_layout": "flat",
@@ -201,7 +192,7 @@ def _normalize(row: dict) -> dict:
     return normalized
 
 
-def test_flat_layout_record_and_arrow_match(collection, tmp_path, caplog: pytest.LogCaptureFixture):
+def test_flat_layout_record_and_arrow_match(mongodb_uri, collection, tmp_path, caplog: pytest.LogCaptureFixture):
     ref = ObjectId()
     collection.insert_many(
         [
@@ -223,8 +214,8 @@ def test_flat_layout_record_and_arrow_match(collection, tmp_path, caplog: pytest
     )
 
     with caplog.at_level(logging.WARNING):
-        record_messages = _sync(collection, tmp_path, batch=False, declared=DECLARED)
-        batch_messages = _sync(collection, tmp_path, batch=True, declared=DECLARED)
+        record_messages = _sync(mongodb_uri, collection, tmp_path, batch=False, declared=DECLARED)
+        batch_messages = _sync(mongodb_uri, collection, tmp_path, batch=True, declared=DECLARED)
 
     for messages in (record_messages, batch_messages):
         schema = next(m for m in messages if m["type"] == "SCHEMA")["schema"]
@@ -243,26 +234,29 @@ def test_flat_layout_record_and_arrow_match(collection, tmp_path, caplog: pytest
 
 
 @pytest.mark.parametrize("batch", [False, True], ids=["record", "arrow"])
-def test_flat_layout_type_mismatch_fails(collection, tmp_path, batch: bool):
+def test_flat_layout_type_mismatch_fails(mongodb_uri, collection, tmp_path, batch: bool):
     collection.insert_one({"age": 1})
     bad = collection.insert_one({"age": 1.5}).inserted_id
 
     with pytest.raises(DeclaredTypeError, match=f"Field 'age' .* 'integer', but document {bad} .* 'double'"):
-        _sync(collection, tmp_path, batch=batch, declared={"age": {"type": ["integer", "null"]}})
+        _sync(mongodb_uri, collection, tmp_path, batch=batch, declared={"age": {"type": ["integer", "null"]}})
 
 
-def test_flat_layout_arrow_fails_before_writing_files(collection, tmp_path):
+def test_flat_layout_arrow_fails_before_writing_files(mongodb_uri, collection, tmp_path):
     collection.insert_many([{"age": i} for i in range(5)] + [{"age": "five"}])
     with pytest.raises(DeclaredTypeError):
-        _sync(collection, tmp_path, batch=True, declared={"age": {"type": ["integer", "null"]}})
+        _sync(mongodb_uri, collection, tmp_path, batch=True, declared={"age": {"type": ["integer", "null"]}})
     assert not list(tmp_path.iterdir())
 
 
 @pytest.mark.parametrize("batch", [False, True], ids=["record", "arrow"])
-def test_flat_layout_skips_deselected_fields(collection, tmp_path, caplog: pytest.LogCaptureFixture, batch: bool):
+def test_flat_layout_skips_deselected_fields(
+    mongodb_uri, collection, tmp_path, caplog: pytest.LogCaptureFixture, batch: bool
+):
     collection.insert_one({"age": 1, "score": "not a number", "extra": 1})
     with caplog.at_level(logging.WARNING):
         messages = _sync(
+            mongodb_uri,
             collection,
             tmp_path,
             batch=batch,
@@ -277,14 +271,16 @@ def test_flat_layout_skips_deselected_fields(collection, tmp_path, caplog: pytes
 
 
 @pytest.mark.parametrize("batch", [False, True], ids=["record", "arrow"])
-def test_flat_layout_requires_declared_fields(collection, tmp_path, batch: bool):
+def test_flat_layout_requires_declared_fields(mongodb_uri, collection, tmp_path, batch: bool):
     collection.insert_one({"age": 1})
     with pytest.raises(ValueError, match=r"requires the schema of stream .* to declare the document fields"):
-        _sync(collection, tmp_path, batch=batch, declared={})
+        _sync(mongodb_uri, collection, tmp_path, batch=batch, declared={})
 
 
 @pytest.mark.parametrize("update,bson_type", [(1.5, "double"), (True, "bool")])
-def test_flat_layout_arrow_fails_on_silently_coerced_update(collection, tmp_path, monkeypatch, update, bson_type):
+def test_flat_layout_arrow_fails_on_silently_coerced_update(
+    mongodb_uri, collection, tmp_path, monkeypatch, update, bson_type
+):
     """A declared integer updated during the sync can't be silently truncated or coerced by pymongoarrow."""
     collection.insert_many([{"age": i} for i in range(3)])
     updated = collection.find_one(sort=[("_id", -1)])["_id"]
@@ -297,4 +293,4 @@ def test_flat_layout_arrow_fails_on_silently_coerced_update(collection, tmp_path
 
     monkeypatch.setattr(arrow, "scan_declared_types", scan_then_update)
     with pytest.raises(RuntimeError, match=f"Field 'age' .* BSON type '{bson_type}' in document {updated}"):
-        _sync(collection, tmp_path, batch=True, declared={"age": {"type": ["integer", "null"]}})
+        _sync(mongodb_uri, collection, tmp_path, batch=True, declared={"age": {"type": ["integer", "null"]}})
