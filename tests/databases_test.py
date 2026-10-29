@@ -86,18 +86,50 @@ def test_discovery_fails_when_collections_share_a_stream_name(client):
             client.drop_database(database)
 
 
-def test_sync_reads_each_stream_from_its_database(databases):
-    names, collection = databases
-    config = {"mongodb_connection_string": MONGODB_URI, "databases": names, "filter_collections": [collection]}
-
+def _records(config: dict, catalog: dict | None = None) -> dict[str, str]:
+    """Sync and return the `source` of each stream's record."""
+    config = {"mongodb_connection_string": MONGODB_URI, **config}
     buf = io.StringIO()
     with redirect_stdout(buf):
-        TapMongoDB(config=config, parse_env_config=False).sync_all()
+        TapMongoDB(config=config, catalog=catalog, parse_env_config=False).sync_all()
 
     messages = [json.loads(line) for line in buf.getvalue().splitlines()]
-    records = {
+    return {
         message["stream"]: message["record"]["document"]["source"]
         for message in messages
         if message["type"] == "RECORD"
     }
+
+
+def test_sync_reads_each_stream_from_its_database(databases):
+    names, collection = databases
+
+    records = _records({"databases": names, "filter_collections": [collection]})
+
     assert records == {f"{name}-{collection}": name for name in names}
+
+
+def _catalog_without_database_names(config: dict) -> dict:
+    """A catalog as discovered before multiple databases were supported."""
+    streams = _streams(config)
+    for stream in streams:
+        del stream["database_name"]
+        next(entry for entry in stream["metadata"] if not entry["breadcrumb"])["metadata"]["selected"] = True
+    return {"streams": streams}
+
+
+def test_catalog_without_database_name_reads_the_selected_database(databases):
+    names, collection = databases
+    catalog = _catalog_without_database_names({"database": names[0], "filter_collections": [collection]})
+
+    records = _records({"database": names[0], "databases": [names[1]]}, catalog)
+
+    assert records == {collection: names[1]}
+
+
+def test_catalog_without_database_name_needs_one_selected_database(databases):
+    names, collection = databases
+    catalog = _catalog_without_database_names({"database": names[0], "filter_collections": [collection]})
+
+    with pytest.raises(ValueError, match="Run discovery again"):
+        _records({"databases": names}, catalog)

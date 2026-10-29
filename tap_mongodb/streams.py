@@ -94,7 +94,7 @@ class MongoDBCollectionStream(Stream):
         self._connector: MongoDBConnector = connector
         self.catalog_entry = catalog_entry
         # A catalog discovered before multiple databases were supported has no database name.
-        self._database_name: str = self.catalog_entry.get("database_name") or tap.config["database"]
+        self._database_name: str = self.catalog_entry.get("database_name") or connector.default_database_name()
         self._collection_name: str = self.catalog_entry["table_name"]
         self._declared: list[DeclaredField] = []
         self._deselected: list[str] = []

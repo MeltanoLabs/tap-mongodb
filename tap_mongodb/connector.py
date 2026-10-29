@@ -59,6 +59,13 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
             raise RuntimeError(msg) from exception
         return client
 
+    def default_database_name(self) -> str:
+        """Return the only selected database, for a catalog entry that names no database."""
+        if len(self._databases) != 1:
+            msg = "A catalog entry names no database. Run discovery again, or select exactly one database."
+            raise ValueError(msg)
+        return self._databases[0]
+
     @property
     def version(self) -> MongoVersion | None:
         """Returns the MongoVersion that is being used."""
