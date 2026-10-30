@@ -60,8 +60,11 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
 
     def default_database_name(self) -> str:
         """Return the only selected database, for a catalog entry that names no database."""
-        if len(self._databases) != 1:
-            msg = "A catalog entry names no database. Run discovery again, or select exactly one database."
+        if self._qualify_stream_names or len(self._databases) != 1:
+            msg = (
+                "A catalog entry names no database. Run discovery again, "
+                "or set `database` to the one it was discovered from."
+            )
             raise ValueError(msg)
         return self._databases[0]
 
