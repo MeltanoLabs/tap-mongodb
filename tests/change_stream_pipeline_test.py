@@ -21,9 +21,10 @@ def _make_stream(config: dict) -> tuple[MongoDBCollectionStream, MagicMock]:
     connector = MagicMock()
     connector.version = (6, 0)
     collection = MagicMock()
-    connector.database.__getitem__.return_value = collection
+    connector.mongo_client.__getitem__.return_value.__getitem__.return_value = collection
 
     catalog_entry = {
+        "database_name": "my_database",
         "table_name": "my_collection",
         "tap_stream_id": "my_collection",
         "schema": {"type": "object", "properties": {}},

@@ -19,16 +19,29 @@ plugins:
     - structured-logging
     settings_group_validation:
     - - mongodb_connection_string
+      - databases
+    - - mongodb_connection_string
       - database
+    - - documentdb_credential_json_string
+      - databases
     - - documentdb_credential_json_string
       - database
     - - documentdb_credential_json_string
       - documentdb_credential_json_extra_options
+      - databases
+    - - documentdb_credential_json_string
+      - documentdb_credential_json_extra_options
       - database
     settings:
+    - name: databases
+      kind: array
+      value: []
+      description: |
+        Databases from which records will be extracted (default: all except `admin`, `local` and `config`).
+        Takes precedence over `database`. Each stream is named `<database>-<collection>`.
     - name: database
       kind: string
-      description: Database name from which records will be extracted.
+      description: 'Database name from which records will be extracted. Each stream is named `<collection>`. Deprecated: use `databases` instead.'
     - name: mongodb_connection_string
       kind: string
       description: |

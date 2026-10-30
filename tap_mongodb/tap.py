@@ -25,10 +25,24 @@ class TapMongoDB(Tap):
 
     config_jsonschema = th.PropertiesList(
         th.Property(
+            "databases",
+            th.ArrayType(th.StringType),
+            required=False,
+            default=[],
+            description=(
+                "Databases from which records will be extracted (default: all except `admin`, `local` and `config`). "
+                "Takes precedence over `database`. Each stream is named `<database>-<collection>`."
+            ),
+        ),
+        th.Property(
             "database",
             th.StringType,
-            required=True,
-            description="Database name from which records will be extracted.",
+            required=False,
+            deprecated=True,
+            description=(
+                "Database name from which records will be extracted. Each stream is named `<collection>`. "
+                "Deprecated: use `databases` instead."
+            ),
         ),
         th.Property(
             "mongodb_connection_string",
@@ -246,14 +260,18 @@ class TapMongoDB(Tap):
     @cached_property
     def connector(self) -> MongoDBConnector:
         """Get MongoDBConnector instance. Instance is cached and reused."""
+        databases = self.config["databases"]
+        # `database` predates `databases`, so it keeps the stream names from before them.
+        legacy_database = not databases and bool(self.config.get("database"))
         return MongoDBConnector(
             self._get_mongo_connection_string(),
             self._get_mongo_options(),
-            self.config.get("database"),
+            [self.config["database"]] if legacy_database else databases,
             self.config.get("datetime_conversion"),
             prefix=self.config.get("prefix", None),
             collections=self.config["filter_collections"],
             add_record_metadata=self.config.get("add_record_metadata", False),
+            qualify_stream_names=not legacy_database,
         )
 
     @property
