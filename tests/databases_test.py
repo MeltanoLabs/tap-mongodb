@@ -127,18 +127,18 @@ def _catalog_without_database_names(config: dict) -> dict:
     return {"streams": streams}
 
 
-def test_catalog_without_database_name_reads_the_selected_database(databases):
+def test_catalog_without_database_name_reads_the_database(databases):
     names, collection = databases
     catalog = _catalog_without_database_names({"database": names[0], "filter_collections": [collection]})
 
-    records = _records({"database": names[0], "databases": [names[1]]}, catalog)
+    records = _records({"database": names[0]}, catalog)
 
-    assert records == {collection: names[1]}
+    assert records == {collection: names[0]}
 
 
-def test_catalog_without_database_name_needs_one_selected_database(databases):
+def test_catalog_without_database_name_needs_database(databases):
     names, collection = databases
     catalog = _catalog_without_database_names({"database": names[0], "filter_collections": [collection]})
 
     with pytest.raises(ValueError, match="Run discovery again"):
-        _records({"databases": names}, catalog)
+        _records({"databases": [names[1]]}, catalog)
