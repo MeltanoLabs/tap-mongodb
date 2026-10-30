@@ -1,5 +1,6 @@
 """MongoDB/DocumentDB connector utility"""
 
+import re
 from functools import cached_property
 from logging import Logger, getLogger
 from typing import Any, TypeAlias
@@ -162,7 +163,7 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
                 "$or": [
                     {
                         "name": {
-                            "$regex": f"^{c}$",
+                            "$regex": f"^{re.escape(c)}$",
                             "$options": "i",
                         }
                     }
