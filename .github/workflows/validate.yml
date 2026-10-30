@@ -34,7 +34,7 @@ permissions: {}
 jobs:
   build-package:
     name: Build & verify package
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       supported-python-versions: ${{ steps.baipp.outputs.supported_python_classifiers_json_array }}
     steps:
@@ -47,7 +47,7 @@ jobs:
 
   pre-commit:
     name: Linting and formatting
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -58,7 +58,7 @@ jobs:
 
   smoke-test:
     name: Meltano Smoke Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build-package
     strategy:
       fail-fast: false
@@ -81,7 +81,7 @@ jobs:
 
   test:
     name: Tap Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build-package
     strategy:
       fail-fast: false
@@ -115,7 +115,7 @@ jobs:
 
   integration:
     name: Meltano integration test 🐉
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       DATABASE: test
       USERNAME: admin
