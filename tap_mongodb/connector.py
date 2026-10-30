@@ -6,7 +6,7 @@ from typing import Any, TypeAlias
 
 from pymongo import MongoClient
 from pymongo.database import Database
-from pymongo.errors import PyMongoError
+from pymongo.errors import OperationFailure, PyMongoError
 from singer_sdk.singerlib.catalog import CatalogEntry, MetadataMapping, Schema
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL
 
@@ -130,10 +130,18 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         Returns:
             The discovered catalog entries as a list.
         """
-        database_names = self._databases or [
-            name for name in self.mongo_client.list_database_names() if name not in SYSTEM_DATABASES
-        ]
+        database_names = self._databases or self._list_database_names()
         return [entry for name in database_names for entry in self._discover_database(self.mongo_client[name])]
+
+    def _list_database_names(self) -> list[str]:
+        """Return the databases the user may see, minus the system ones."""
+        try:
+            with self.mongo_client.list_databases(nameOnly=True, authorizedDatabases=True) as cursor:
+                names = [db["name"] for db in cursor]
+        except OperationFailure as exception:
+            msg = "Could not list databases. Grant the user `listDatabases`, or set `databases` explicitly."
+            raise RuntimeError(msg) from exception
+        return [name for name in names if name not in SYSTEM_DATABASES]
 
     def _discover_database(self, database: Database) -> list[dict[str, Any]]:
         """Return the catalog entries for the collections in one database."""
