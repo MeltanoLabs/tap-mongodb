@@ -134,7 +134,12 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
             The discovered catalog entries as a list.
         """
         database_names = self._databases or self._list_database_names()
-        return [entry for name in database_names for entry in self._discover_database(self.mongo_client[name])]
+        entries = [entry for name in database_names for entry in self._discover_database(self.mongo_client[name])]
+        stream_ids = [entry["tap_stream_id"] for entry in entries]
+        if clashes := sorted({stream_id for stream_id in stream_ids if stream_ids.count(stream_id) > 1}):
+            msg = f"Collections map to the same stream name: {clashes}. Set `filter_collections` to tell them apart."
+            raise ValueError(msg)
+        return entries
 
     def _list_database_names(self) -> list[str]:
         """Return the databases the user may see, minus the system ones."""
