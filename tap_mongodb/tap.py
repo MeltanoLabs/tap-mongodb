@@ -56,6 +56,22 @@ class TapMongoDB(Tap):
             ),
         ),
         th.Property(
+            "username",
+            th.StringType,
+            required=False,
+            description="Username to authenticate with. Takes precedence over the username in the connection string.",
+        ),
+        th.Property(
+            "password",
+            th.StringType,
+            required=False,
+            secret=True,
+            description=(
+                "Password to authenticate with, not url-encoded. Takes precedence over the password in the connection "
+                "string."
+            ),
+        ),
+        th.Property(
             "documentdb_credential_json_string",
             th.StringType,
             required=False,
@@ -260,12 +276,18 @@ class TapMongoDB(Tap):
     @cached_property
     def connector(self) -> MongoDBConnector:
         """Get MongoDBConnector instance. Instance is cached and reused."""
+        options = self._get_mongo_options()
+        # `MongoClient` reads a `None` credential as no credential, and drops the one in the connection string.
+        if "username" in self.config:
+            options["username"] = self.config["username"]
+        if "password" in self.config:
+            options["password"] = self.config["password"]
         databases = self.config["databases"]
         # `database` predates `databases`, so it keeps the stream names from before them.
         legacy_database = not databases and bool(self.config.get("database"))
         return MongoDBConnector(
             self._get_mongo_connection_string(),
-            self._get_mongo_options(),
+            options,
             [self.config["database"]] if legacy_database else databases,
             self.config.get("datetime_conversion"),
             prefix=self.config.get("prefix", None),

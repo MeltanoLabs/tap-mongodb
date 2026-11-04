@@ -26,6 +26,14 @@ settings:
       https://www.mongodb.com/docs/manual/reference/connection-string/#connection-string-uri-format for specification.
       The password included in this string should be url-encoded. The tap will not url-encode it.
     sensitive: true
+  - name: username
+    kind: string
+    description: Username to authenticate with. Takes precedence over the username in the connection string.
+  - name: password
+    kind: password
+    description: |
+      Password to authenticate with, not url-encoded. Takes precedence over the password in the connection string.
+    sensitive: true
   - name: documentdb_credential_json_string
     kind: password
     description: |
