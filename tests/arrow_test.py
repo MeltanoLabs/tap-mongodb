@@ -81,6 +81,7 @@ def _mock_stream(replication_method: str) -> MongoDBCollectionStream:
     tap.initialized_at = 0
     tap.name = "tap-mongodb"
     catalog_entry = {
+        "database_name": "my_database",
         "table_name": "my_collection",
         "tap_stream_id": "my_collection",
         "schema": {"type": "object", "properties": {}},
