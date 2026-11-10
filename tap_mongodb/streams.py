@@ -7,7 +7,8 @@ import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from pymongo import ASCENDING
+from bson.objectid import ObjectId
+from pymongo import ASCENDING, DESCENDING
 from pymongo.errors import OperationFailure
 from singer_sdk import Tap
 from singer_sdk import singerlib as singer
@@ -25,7 +26,6 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Mapping
 
     import pyarrow as pa
-    from bson.objectid import ObjectId
     from pymongo.collection import Collection
     from pymongo.database import Database
     from pymongo.typings import _DocumentType
@@ -267,6 +267,18 @@ class MongoDBCollectionStream(Stream):
                 config = {**config, "batch_config": {**raw, "batch_size": DEFAULT_ARROW_BATCH_SIZE}}
         return super().get_batch_config(config)
 
+    def _check_object_ids(self, collection: Collection) -> None:
+        """Fail if an `_id` isn't an ObjectId, as incremental replication can't extract that document."""
+        # `_id` values sort by BSON type first, so every `_id` is an ObjectId when the lowest and highest are.
+        for direction in (ASCENDING, DESCENDING):
+            document = collection.find_one({}, {"_id": 1}, sort=[("_id", direction)])
+            if document is not None and not isinstance(document["_id"], ObjectId):
+                msg = (
+                    f"Incremental replication of stream '{self.name}' requires every `_id` to be an ObjectId, but "
+                    f"the collection has a `{type(document['_id']).__name__}` `_id`. Use LOG_BASED replication instead."
+                )
+                raise TypeError(msg)
+
     def get_record_batches(self, context: dict | None) -> Iterable[pa.Table] | None:
         """Return the stream's documents as Arrow tables, for Arrow BATCH files.
 
@@ -277,8 +289,10 @@ class MongoDBCollectionStream(Stream):
 
         bookmark: str | None = self.get_starting_replication_key_value(context)
         start = to_object_id(bookmark or self.config.get("start_date", DEFAULT_START_DATE))
+        collection: Collection = self._connector.mongo_client[self._database_name][self._collection_name]
+        self._check_object_ids(collection)
         extractor = ArrowExtractor(
-            collection=self._connector.mongo_client[self._database_name][self._collection_name],
+            collection=collection,
             stream_name=self.name,
             logger=self.logger,
             add_record_metadata=self.config.get("add_record_metadata", False),
@@ -304,6 +318,7 @@ class MongoDBCollectionStream(Stream):
         self.logger.info("state: %s", self.get_context_state(context))
 
         if self.replication_method == REPLICATION_INCREMENTAL:
+            self._check_object_ids(collection)
             if bookmark:
                 self.logger.debug("using existing bookmark: %s", bookmark)
                 start_date = to_object_id(bookmark)
