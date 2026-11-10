@@ -317,7 +317,6 @@ class ArrowExtractor:
             One table per raw batch returned by the server.
 
         Raises:
-            TypeError: If `_id` isn't always an ObjectId.
             RuntimeError: If a field's type changed after the type scan, e.g. a document was updated during the sync.
         """
         newest = self.collection.find_one({"_id": {"$gt": start}}, {"_id": 1}, sort=[("_id", DESCENDING)])
@@ -338,9 +337,6 @@ class ArrowExtractor:
                 )
             check_declared_types(self.collection, query, self.declared, field_types, stream_name=self.stream_name)
             plan = DocumentPlan.from_declared(self.declared, field_types)
-        if field_types.get("_id", {"objectId"}) != {"objectId"}:
-            msg = f"Incremental replication of stream '{self.stream_name}' requires every `_id` to be an ObjectId."
-            raise TypeError(msg)
         schema = Schema(plan.native)
         codec_options = self.collection.codec_options
 
