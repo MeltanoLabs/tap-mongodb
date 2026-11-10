@@ -78,7 +78,7 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
 
         parts.append(collection_name)
 
-        return delimiter.join(parts).lower()
+        return delimiter.join(parts)
 
     def _get_schema(self) -> dict[str, Any]:
         """Return the stream schema, with `_sdc_*` properties only if record metadata is enabled.

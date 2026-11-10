@@ -258,7 +258,7 @@ def test_arrow_batches_state_and_resume(collection, tmp_path):
     messages = _sync(collection, tmp_path, batch=True)
     batches = [i for i, m in enumerate(messages) if m["type"] == "BATCH"]
     assert len(batches) == 3  # 100, 100 and 50 rows
-    bookmarks = [messages[i + 1]["value"]["bookmarks"][collection.name.lower()] for i in batches]
+    bookmarks = [messages[i + 1]["value"]["bookmarks"][collection.name] for i in batches]
     rows = _batch_rows(messages)
     assert [b["replication_key_value"] for b in bookmarks] == [
         rows[99]["replication_key"],

@@ -25,3 +25,9 @@ def test_sdc_properties_only_when_metadata_enabled(add_record_metadata: bool):
         assert sdc_properties == {"_sdc_batched_at", "_sdc_extracted_at"}
     else:
         assert not sdc_properties
+
+
+def test_stream_name_keeps_the_collection_name_casing():
+    entry = _connector(add_record_metadata=False).discover_catalog_entry("emailNotifications")
+
+    assert entry.tap_stream_id == "emailNotifications"
