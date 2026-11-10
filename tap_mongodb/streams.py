@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Mapping
 
     import pyarrow as pa
+    from bson.timestamp import Timestamp
     from pymongo.collection import Collection
     from pymongo.database import Database
     from pymongo.typings import _DocumentType
@@ -144,19 +145,6 @@ class MongoDBCollectionStream(Stream):
             )
         row.update(values)
         return row
-
-    @property
-    def primary_keys(self) -> list[str] | None:
-        """If running in log-based replication mode, use the Change Event ID as the primary key. If running instead in
-        incremental replication mode, use the document's ObjectId."""
-        if self.replication_method == REPLICATION_LOG_BASED:
-            return ["replication_key"]
-        return ["object_id"]
-
-    @primary_keys.setter
-    def primary_keys(self, new_value: list[str]) -> None:
-        """Set primary keys for the stream."""
-        self._primary_keys = new_value
 
     @property
     def is_sorted(self) -> bool:
@@ -301,6 +289,39 @@ class MongoDBCollectionStream(Stream):
             extractor.declared, extractor.deselected = self._selected_declared_fields()
         return extractor.tables(start)
 
+    def _extract_all(self, collection: Collection, *, should_add_metadata: bool) -> Generator[dict, None, Timestamp]:
+        """Yield every document in the collection, and return the cluster time from before the first one was read.
+
+        A change stream opened at that time sees every change made while the documents are read.
+        """
+        with self._connector.mongo_client.start_session() as session:
+            collection.database.command("ping", session=session)
+            start = session.operation_time
+            if start is None:
+                msg = "LOG_BASED replication requires a replica set or a sharded cluster, which report a cluster time."
+                raise RuntimeError(msg)
+            cluster_time: str = start.as_datetime().isoformat()
+            # A read in the same causally consistent session waits until the server has applied `start`, so a lagging
+            # secondary can't return documents older than the change stream's start.
+            for document in collection.find({}, session=session):
+                recursive_replace_empty_in_dict(document)
+                record = {
+                    # No replication key, so a document never becomes the bookmark
+                    "replication_key": None,
+                    "object_id": str(document["_id"]),
+                    "document": document,
+                    "operation_type": None,
+                    "cluster_time": cluster_time,
+                    "namespace": {
+                        "database": collection.database.name,
+                        "collection": collection.name,
+                    },
+                }
+                if should_add_metadata:
+                    record["_sdc_batched_at"] = datetime.now(timezone.utc)
+                yield record
+        return start
+
     def get_records(self, context: dict | None) -> Iterable[dict]:
         """Return a generator of record-type dictionary objects."""
         # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -362,6 +383,11 @@ class MongoDBCollectionStream(Stream):
                     change_stream_options["start_after"] = {"_data": bookmark}
                 else:
                     change_stream_options["resume_after"] = {"_data": bookmark}
+            else:
+                self.logger.info("no bookmark - extracting every document before reading changes")
+                change_stream_options["start_at_operation_time"] = yield from self._extract_all(
+                    collection, should_add_metadata=should_add_metadata
+                )
             operation_types_allowlist: set = set(self.config.get("operation_types"))
             has_seen_a_record: bool = False
             has_yielded_dummy_record: bool = False
@@ -464,17 +490,13 @@ class MongoDBCollectionStream(Stream):
                         # if we're in this block, we're in MongoDB specifically - DocumentDB will have a None resume
                         # token here. If we take no action, the tap will remain open and idle until a message appears
                         # in the change stream, then it will yield that record and close. That's not ideal because it
-                        # doesn't need to wait around for activity. It can just yield a "dummy" record with the resume
-                        # token from the change stream, exit immediately, and then pick up processing the change stream
-                        # from this point the next time the tap is run. So that's what we do.
-                        yield {
-                            "replication_key": change_stream.resume_token["_data"],
-                            "object_id": None,
-                            "document": None,
-                            "operation_type": None,
-                            "cluster_time": None,
-                            "namespace": None,
-                        }
+                        # doesn't need to wait around for activity. It can just store the change stream's resume token
+                        # as the bookmark, without a record for the target, exit immediately, and then pick up
+                        # processing the change stream from this point the next time the tap is run. So that's what we
+                        # do.
+                        self._increment_stream_state(
+                            {"replication_key": change_stream.resume_token["_data"]}, context=context
+                        )
                         has_yielded_dummy_record = True
 
                     if record is None and (has_yielded_dummy_record or has_seen_a_record):
@@ -490,9 +512,8 @@ class MongoDBCollectionStream(Stream):
                         # fullDocument key is not present on delete events - if it is missing, fall back to documentKey
                         # instead. If that is missing, pass None/null to avoid raising an error.
                         document = record.get("fullDocument", record.get("documentKey", None))
-                        object_id: ObjectId | None = (
-                            document["_id"] if document is not None and "_id" in document else None
-                        )
+                        # A document deleted before the lookup has no `fullDocument`, but its event keeps the `_id`.
+                        object_id: ObjectId | None = record["documentKey"]["_id"] if "documentKey" in record else None
                         parsed_record = {
                             "replication_key": record["_id"]["_data"],
                             "object_id": str(object_id) if object_id is not None else None,

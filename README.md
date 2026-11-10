@@ -22,7 +22,9 @@ The tap supports two replication modes:
 
 ### 2. **LOG_BASED** (CDC - Change Data Capture)
 - Captures change events via MongoDB Change Streams
+- Extracts every document first when the stream has no state, as records with no operation type or replication key, and the extraction's start as their cluster time
 - Tracks insert, update, replace, and delete operations
+- Keeps one row per document: the stream's key is `object_id`, so each change replaces the row of the document it changed, and a delete leaves the row with the `delete` operation type
 - Requires MongoDB replica set or sharded cluster
 - Includes operation metadata, cluster timestamps, and full document state
 - Automatically exits after 10 seconds of inactivity (production-ready)
@@ -237,10 +239,13 @@ meltano run tap-mongodb-cdc target-jsonl
 ```
 
 The tap will:
-1. Open a change stream for each collection
-2. Yield a resume token to track position
-3. Process any existing change events
-4. Automatically exit after 10 seconds of inactivity
+1. Extract every document of a collection that has no state yet, as records with no operation type or replication key, and the extraction's start as their cluster time
+2. Open a change stream for each collection, from the start of step 1 if it ran
+3. Store a resume token to track position
+4. Process any existing change events
+5. Automatically exit after 10 seconds of inactivity
+
+The change stream starts at the latest write before step 1, so a change made around that time can be read twice, and the later read replaces the row. The oplog must hold the changes made during step 1 until it ends, or the change stream can't open.
 
 ### CDC Output Format
 
@@ -357,6 +362,8 @@ The tap automatically exits after 10 seconds of inactivity:
 2. Update connection string to include `?replicaSet=rs0`
 3. Clear existing state: `rm -rf .meltano/extractors/tap-mongodb/`
 4. Use `tap-mongodb-cdc` plugin or update metadata to `LOG_BASED`
+
+A `LOG_BASED` table from a version that keyed each change event on `replication_key` holds several rows per document, so it can't merge on `object_id`. Drop the table and clear the state before the first sync with this version.
 
 **From LOG_BASED to INCREMENTAL:**
 1. Update connection string (can remove replica set parameters)
