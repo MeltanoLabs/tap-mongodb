@@ -130,7 +130,11 @@ class DocumentPlan:
         Returns:
             The conversion plan, which also decodes `_id` for the record envelope.
         """
-        plan = cls(native={"_id": ObjectIdType()})
+        plan = (
+            cls(native={"_id": ObjectIdType()})
+            if field_types.get("_id", set()) <= {"objectId"}
+            else cls(as_string=["_id"])
+        )
         for declared in fields:
             seen = field_types.get(declared.name, set()) - {"null", "missing"}
             if declared.kind in {"integer", "number", "boolean", "date-time"}:
@@ -323,7 +327,28 @@ class ArrowExtractor:
         if newest is None:
             return
 
-        query = {"_id": {"$gt": start, "$lte": newest["_id"]}}
+        yield from self._tables({"_id": {"$gt": start, "$lte": newest["_id"]}}, cluster_time=None)
+
+    def all_tables(self, cluster_time: datetime) -> Iterator[pa.Table]:
+        """Yield every document, in `_id` order, as Arrow tables of a LOG_BASED stream's records.
+
+        A document changed during the read can differ from what the read returns. The change stream read after it
+        replaces its row.
+
+        Args:
+            cluster_time: The cluster time from before the read, which every row gets as its `cluster_time`.
+
+        Yields:
+            One table per raw batch returned by the server.
+        """
+        yield from self._tables({}, cluster_time=cluster_time)
+
+    def _tables(self, query: dict[str, Any], *, cluster_time: datetime | None) -> Iterator[pa.Table]:
+        """Yield the documents matching `query`, in `_id` order, as Arrow tables.
+
+        Raises:
+            RuntimeError: If a field's type changed after the type scan, e.g. a document was updated during the sync.
+        """
         if self.declared is None:
             field_types = scan_field_types(self.collection, query)
             plan = DocumentPlan.from_field_types(field_types, stream_name=self.stream_name, logger=self.logger)
@@ -342,7 +367,7 @@ class ArrowExtractor:
 
         try:
             for raw_batch in self.collection.find_raw_batches(query, sort=[("_id", ASCENDING)]):
-                yield self._table(raw_batch, plan, schema, codec_options)
+                yield self._table(raw_batch, plan, schema, codec_options, cluster_time=cluster_time)
         except TypeError as error:
             # pymongoarrow raises this for a value that doesn't match the schema, without naming the field
             msg = (
@@ -351,34 +376,42 @@ class ArrowExtractor:
             )
             raise RuntimeError(msg) from error
 
-    def _table(self, raw_batch: bytes, plan: DocumentPlan, schema: Schema, codec_options: CodecOptions) -> pa.Table:
+    def _table(
+        self,
+        raw_batch: bytes,
+        plan: DocumentPlan,
+        schema: Schema,
+        codec_options: CodecOptions,
+        *,
+        cluster_time: datetime | None,
+    ) -> pa.Table:
         context = PyMongoArrowContext(schema, codec_options)
         context.process_bson_stream(raw_batch)
         native = context.finish()
-        self._check_silent_coercions(native, plan)
+        documents = bson.decode_all(raw_batch, codec_options) if plan.python_fields else []
+        self._check_silent_coercions(native, plan, documents)
 
         fields = {name: _conform(native[name].combine_chunks()) for name in plan.native}
-        if plan.python_fields:
-            documents = bson.decode_all(raw_batch, codec_options)
-            for name in plan.as_string:
-                fields[name] = pa.array([as_record_string(doc.get(name)) for doc in documents], type=pa.string())
-            for name in plan.as_json:
-                fields[name] = pa.array([_as_json(doc.get(name)) for doc in documents], type=pa.json_())
+        for name in plan.as_string:
+            fields[name] = pa.array([as_record_string(doc.get(name)) for doc in documents], type=pa.string())
+        for name in plan.as_json:
+            fields[name] = pa.array([_as_json(doc.get(name)) for doc in documents], type=pa.json_())
 
-        object_ids = native["_id"].combine_chunks()
-        hexes = object_id_hex(object_ids)
-        rows = native.num_rows
-        table = {
-            "replication_key": incremental_ids(object_ids, hexes),
-            "object_id": hexes,
-        }
+        rows = len(fields["_id"])
+        if cluster_time is None:
+            object_ids = native["_id"].combine_chunks()
+            hexes = object_id_hex(object_ids)
+            table = {"replication_key": incremental_ids(object_ids, hexes), "object_id": hexes}
+        else:
+            # No replication key, so a document never becomes the bookmark
+            table = {"replication_key": pa.nulls(rows, pa.string()), "object_id": fields["_id"].cast(pa.string())}
         if self.declared is None:
             table["document"] = pa.StructArray.from_arrays(list(fields.values()), names=list(fields))
         else:
             table.update((declared.name, fields[declared.name]) for declared in self.declared)
         table |= {
             "operation_type": pa.nulls(rows, pa.string()),
-            "cluster_time": pa.nulls(rows, _TIMESTAMP_TYPE),
+            "cluster_time": pa.array([cluster_time] * rows, type=_TIMESTAMP_TYPE),
             "namespace": pa.array(
                 [{"database": self.collection.database.name, "collection": self.collection.name}] * rows,
                 type=_NAMESPACE_TYPE,
@@ -390,7 +423,7 @@ class ArrowExtractor:
             table["_sdc_batched_at"] = now
         return pa.table(table)
 
-    def _check_silent_coercions(self, native: pa.Table, plan: DocumentPlan) -> None:
+    def _check_silent_coercions(self, native: pa.Table, plan: DocumentPlan, documents: list[dict[str, Any]]) -> None:
         """Fail if a numeric column got a value pymongoarrow coerces silently instead of raising `TypeError`.
 
         The type scan rules these values out when the sync starts, but a document updated during the sync can still
@@ -403,8 +436,12 @@ class ArrowExtractor:
         if not checks or native.num_rows == 0:
             return
 
-        object_ids = native["_id"].combine_chunks()
-        batch_range = {"_id": {"$gte": object_ids[0].as_py(), "$lte": object_ids[-1].as_py()}}
+        if "_id" in plan.native:
+            ids = native["_id"].combine_chunks()
+            first, last = ids[0].as_py(), ids[-1].as_py()
+        else:
+            first, last = documents[0]["_id"], documents[-1]["_id"]
+        batch_range = {"_id": {"$gte": first, "$lte": last}}
         clauses = [_has_type(name, types) for name, types in checks.items()]
         document = self.collection.find_one({**batch_range, "$or": clauses}, sort=[("_id", ASCENDING)])
         if document is None:
