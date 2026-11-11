@@ -385,7 +385,9 @@ class ArrowExtractor:
             ),
         }
         if self.add_record_metadata:
-            table["_sdc_batched_at"] = pa.array([datetime.now(timezone.utc)] * rows, type=_TIMESTAMP_TYPE)
+            now = pa.array([datetime.now(timezone.utc)] * rows, type=_TIMESTAMP_TYPE)
+            table["_sdc_extracted_at"] = now
+            table["_sdc_batched_at"] = now
         return pa.table(table)
 
     def _check_silent_coercions(self, native: pa.Table, plan: DocumentPlan) -> None:

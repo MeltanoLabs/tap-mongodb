@@ -285,9 +285,14 @@ def test_arrow_batches_add_record_metadata(collection, tmp_path):
     collection.insert_one({"count": 1})
     config_messages = _sync_with_metadata(collection, tmp_path)
     (row,) = _batch_rows(config_messages)
-    assert isinstance(row["_sdc_batched_at"], datetime)
-    assert row["_sdc_batched_at"].tzinfo is not None
-    assert row["_sdc_batched_at"] <= datetime.now(timezone.utc)
+    for column in ("_sdc_extracted_at", "_sdc_batched_at"):
+        assert isinstance(row[column], datetime)
+        assert row[column].tzinfo is not None
+        assert row[column] <= datetime.now(timezone.utc)
+
+    (row,) = _batch_rows(_sync(collection, tmp_path, batch=True))
+    assert "_sdc_extracted_at" not in row
+    assert "_sdc_batched_at" not in row
 
 
 def _sync_with_metadata(collection, tmp_path) -> list[dict]:
