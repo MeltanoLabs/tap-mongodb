@@ -1,18 +1,21 @@
 """MongoDB/DocumentDB connector utility"""
 
+import re
 from functools import cached_property
 from logging import Logger, getLogger
 from typing import Any, TypeAlias
 
 from pymongo import MongoClient
 from pymongo.database import Database
-from pymongo.errors import PyMongoError
+from pymongo.errors import OperationFailure, PyMongoError
 from singer_sdk.singerlib.catalog import CatalogEntry, MetadataMapping, Schema
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL
 
 from tap_mongodb.schema import SCHEMA
 
 MongoVersion: TypeAlias = tuple[int, int]
+
+SYSTEM_DATABASES = frozenset({"admin", "config", "local"})
 
 
 class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
@@ -22,19 +25,21 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         self,
         connection_string: str,
         options: dict[str, Any],
-        db_name: str,
+        databases: list[str],
         datetime_conversion: str,
         prefix: str | None = None,
         collections: list[str] | None = None,
         add_record_metadata: bool = False,
+        qualify_stream_names: bool = True,
     ) -> None:
         self._connection_string = connection_string
         self._options = options
-        self._db_name = db_name
+        self._databases = databases
         self._datetime_conversion: str = datetime_conversion.upper()
         self._prefix: str | None = prefix
         self._collections = collections
         self._add_record_metadata = add_record_metadata
+        self._qualify_stream_names = qualify_stream_names
         self._logger: Logger = getLogger(__name__)
         self._version: MongoVersion | None = None
 
@@ -54,10 +59,15 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
             raise RuntimeError(msg) from exception
         return client
 
-    @property
-    def database(self) -> Database:
-        """Provide a Database instance."""
-        return self.mongo_client[self._db_name]
+    def default_database_name(self) -> str:
+        """Return the only selected database, for a catalog entry that names no database."""
+        if self._qualify_stream_names or len(self._databases) != 1:
+            msg = (
+                "A catalog entry names no database. Run discovery again, "
+                "or set `database` to the one it was discovered from."
+            )
+            raise ValueError(msg)
+        return self._databases[0]
 
     @property
     def version(self) -> MongoVersion | None:
@@ -92,9 +102,11 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         properties = {name: prop for name, prop in SCHEMA["properties"].items() if not name.startswith("_sdc_")}
         return {**SCHEMA, "properties": properties}
 
-    def discover_catalog_entry(self, collection_name: str) -> CatalogEntry:
+    def discover_catalog_entry(self, database_name: str, collection_name: str) -> CatalogEntry:
         """Create `CatalogEntry` object for the given collection."""
         unique_stream_id = self.get_fully_qualified_name(collection_name, prefix=self._prefix)
+        if self._qualify_stream_names:
+            unique_stream_id = f"{database_name}-{unique_stream_id}"
         schema = self._get_schema()
 
         return CatalogEntry(
@@ -110,7 +122,7 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
                 key_properties=["replication_key"],
                 valid_replication_keys=["replication_key"],  # Known valid replication keys
             ),
-            database=None,  # Expects single-database context
+            database=database_name,
             row_count=None,
             stream_alias=None,
             replication_key="replication_key",  # Default replication key
@@ -122,16 +134,36 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         Returns:
             The discovered catalog entries as a list.
         """
+        database_names = self._databases or self._list_database_names()
+        entries = [entry for name in database_names for entry in self._discover_database(self.mongo_client[name])]
+        stream_ids = [entry["tap_stream_id"] for entry in entries]
+        if clashes := sorted({stream_id for stream_id in stream_ids if stream_ids.count(stream_id) > 1}):
+            msg = f"Collections map to the same stream name: {clashes}. Set `filter_collections` to tell them apart."
+            raise ValueError(msg)
+        return entries
+
+    def _list_database_names(self) -> list[str]:
+        """Return the databases the user may see, minus the system ones."""
+        try:
+            with self.mongo_client.list_databases(nameOnly=True, authorizedDatabases=True) as cursor:
+                names = [db["name"] for db in cursor]
+        except OperationFailure as exception:
+            msg = "Could not list databases. Grant the user `listDatabases`, or set `databases` explicitly."
+            raise RuntimeError(msg) from exception
+        return [name for name in names if name not in SYSTEM_DATABASES]
+
+    def _discover_database(self, database: Database) -> list[dict[str, Any]]:
+        """Return the catalog entries for the collections in one database."""
         result: list[dict] = []
 
-        collections = self.database.list_collection_names(
+        collections = database.list_collection_names(
             authorizedCollections=True,
             nameOnly=True,
             filter={
                 "$or": [
                     {
                         "name": {
-                            "$regex": f"^{c}$",
+                            "$regex": f"^{re.escape(c)}$",
                             "$options": "i",
                         }
                     }
@@ -144,20 +176,20 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
 
         for collection in collections:
             try:
-                self.database[collection].find_one()
+                database[collection].find_one()
             except PyMongoError:
                 # Skip collections that are not accessible by the authenticated user
                 # This is a common case when using a shared cluster
                 # https://docs.mongodb.com/manual/core/security-users/#database-user-privileges
                 self._logger.info(
                     "Skipping collection %s.%s, user does not have permission to it.",
-                    self.database.name,
+                    database.name,
                     collection,
                 )
                 continue
 
-            self._logger.info("Discovered collection %s.%s", self.database.name, collection)
-            catalog_entry: CatalogEntry = self.discover_catalog_entry(collection)
+            self._logger.info("Discovered collection %s.%s", database.name, collection)
+            catalog_entry: CatalogEntry = self.discover_catalog_entry(database.name, collection)
             result.append(catalog_entry.to_dict())
 
         return result
