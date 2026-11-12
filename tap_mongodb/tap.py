@@ -52,7 +52,8 @@ class TapMongoDB(Tap):
             description=(
                 "MongoDB connection string. See "
                 "https://www.mongodb.com/docs/manual/reference/connection-string/#connection-string-uri-format "
-                "for specification."
+                "for specification. UUIDs decode with the `standard` representation unless the connection string "
+                "sets `uuidRepresentation`."
             ),
         ),
         th.Property(
