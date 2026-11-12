@@ -104,8 +104,10 @@ def test_batch_config_arrow_defaults_to_larger_files():
 
 def test_batch_config_arrow_change_streams_emit_records():
     stream = _mock_stream(REPLICATION_LOG_BASED)
+    assert stream.get_batch_config({"batch_config": {"encoding": {"format": "arrow"}}}) is not None
+
+    stream.get_context_state(None)["replication_key_value"] = "8200"
     assert stream.get_batch_config({"batch_config": {"encoding": {"format": "arrow"}}}) is None
-    assert stream.get_record_batches(None) is None
 
 
 def test_batch_config_jsonl_change_streams_unchanged():

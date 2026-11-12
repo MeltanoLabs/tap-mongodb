@@ -23,7 +23,7 @@ from tap_mongodb.flat import DeclaredField, declared_fields, flatten_document
 from tap_mongodb.types import IncrementalId
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterable, Mapping
+    from collections.abc import Generator, Iterable, Iterator, Mapping
 
     import pyarrow as pa
     from bson.timestamp import Timestamp
@@ -244,12 +244,17 @@ class MongoDBCollectionStream(Stream):
     def get_batch_config(self, config: Mapping) -> BatchConfig | None:
         """Return the batch config, or None to emit RECORD messages.
 
-        With the Arrow format, change streams (LOG_BASED) emit RECORD messages instead: their events arrive one at a
-        time and are already small. The default `batch_size` for Arrow is raised to 100,000 rows per file.
+        With the Arrow format, a LOG_BASED stream writes Arrow files only for the documents it reads when it has no
+        bookmark. Its change events emit RECORD messages: they arrive one at a time and are already small. The default
+        `batch_size` for Arrow is raised to 100,000 rows per file.
         """
         raw = config.get("batch_config") or {}
         if (raw.get("encoding") or {}).get("format") == "arrow":
-            if self.replication_method != REPLICATION_INCREMENTAL:
+            reads_documents = self.replication_method == REPLICATION_INCREMENTAL or (
+                self.replication_method == REPLICATION_LOG_BASED
+                and "replication_key_value" not in self.get_context_state(None)
+            )
+            if not reads_documents:
                 return None
             if "batch_size" not in raw:
                 config = {**config, "batch_config": {**raw, "batch_size": DEFAULT_ARROW_BATCH_SIZE}}
@@ -270,15 +275,13 @@ class MongoDBCollectionStream(Stream):
     def get_record_batches(self, context: dict | None) -> Iterable[pa.Table] | None:
         """Return the stream's documents as Arrow tables, for Arrow BATCH files.
 
-        Only incremental replication produces Arrow data; see `tap_mongodb.arrow` for how documents are converted.
+        Incremental replication and a LOG_BASED stream with no bookmark produce Arrow data; see `tap_mongodb.arrow`
+        for how documents are converted.
         """
-        if self.replication_method != REPLICATION_INCREMENTAL:
+        if self.replication_method not in {REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED}:
             return None
 
-        bookmark: str | None = self.get_starting_replication_key_value(context)
-        start = to_object_id(bookmark or self.config.get("start_date", DEFAULT_START_DATE))
         collection: Collection = self._connector.mongo_client[self._database_name][self._collection_name]
-        self._check_object_ids(collection)
         extractor = ArrowExtractor(
             collection=collection,
             stream_name=self.name,
@@ -287,7 +290,38 @@ class MongoDBCollectionStream(Stream):
         )
         if self.is_flat_layout:
             extractor.declared, extractor.deselected = self._selected_declared_fields()
+        if self.replication_method == REPLICATION_LOG_BASED:
+            return self._extract_all_tables(collection, extractor, context)
+
+        bookmark: str | None = self.get_starting_replication_key_value(context)
+        start = to_object_id(bookmark or self.config.get("start_date", DEFAULT_START_DATE))
+        self._check_object_ids(collection)
         return extractor.tables(start)
+
+    def _extract_all_tables(
+        self, collection: Collection, extractor: ArrowExtractor, context: dict | None
+    ) -> Iterator[pa.Table]:
+        """Yield every document as Arrow tables, then store a resume token from before the read as the bookmark.
+
+        The sync ends with the documents. The next one reads the changes made since the token as RECORD messages,
+        which can repeat a change that the read already saw.
+        """
+        with self._connector.mongo_client.start_session() as session:
+            with collection.watch(session=session) as change_stream:
+                token = change_stream.resume_token
+            start = session.operation_time
+            if token is None or start is None:
+                msg = (
+                    f"Arrow batches for LOG_BASED stream '{self.name}' need a resume token before the change stream's "
+                    "first event, which DocumentDB doesn't report. Use RECORD messages instead."
+                )
+                raise RuntimeError(msg)
+            # A read in the same causally consistent session waits until the server has applied the token's time, so
+            # a lagging secondary can't return documents older than the change stream's start.
+            extractor.session = session
+            yield from extractor.all_tables(start.as_datetime())
+        # Only after the last document, so an interrupted sync reads them all again
+        self._increment_stream_state({"replication_key": token["_data"]}, context=context)
 
     def _extract_all(self, collection: Collection, *, should_add_metadata: bool) -> Generator[dict, None, Timestamp]:
         """Yield every document in the collection, and return the cluster time from before the first one was read.

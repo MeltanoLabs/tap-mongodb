@@ -6,12 +6,16 @@ import io
 import json
 import os
 from contextlib import redirect_stdout
+from datetime import datetime, timezone
 from uuid import uuid4
 
+import pyarrow as pa
 import pytest
+from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
+from tap_mongodb.arrow import ArrowExtractor
 from tap_mongodb.streams import MongoDBCollectionStream
 from tap_mongodb.tap import TapMongoDB
 
@@ -33,13 +37,20 @@ def collection():
     client.close()
 
 
-def _sync(collection, state: dict | None = None) -> tuple[list[dict], dict, list[str]]:
-    """Sync the collection with LOG_BASED replication, and return its records, final state and key properties."""
+def _sync(
+    collection, state: dict | None = None, batch_config: dict | None = None
+) -> tuple[list[dict], dict, list[str]]:
+    """Sync the collection with LOG_BASED replication, and return its records, final state and key properties.
+
+    The records include the rows of Arrow batch files, where the message has a `BATCH` type.
+    """
     config = {
         "mongodb_connection_string": MONGODB_URI,
         "database": collection.database.name,
         "filter_collections": [collection.name],
     }
+    if batch_config:
+        config["batch_config"] = batch_config
     catalog = TapMongoDB(config=config, parse_env_config=False).catalog_dict
     (stream,) = catalog["streams"]
     stream["replication_method"] = "LOG_BASED"
@@ -49,7 +60,14 @@ def _sync(collection, state: dict | None = None) -> tuple[list[dict], dict, list
     with redirect_stdout(buf):
         TapMongoDB(config=config, catalog=catalog, state=state, parse_env_config=False).sync_all()
     messages = [json.loads(line) for line in buf.getvalue().splitlines()]
-    records = [message["record"] for message in messages if message["type"] == "RECORD"]
+    records = []
+    for message in messages:
+        if message["type"] == "RECORD":
+            records.append(message["record"])
+        elif message["type"] == "BATCH":
+            (url,) = message["manifest"]
+            with pa.ipc.open_file(url.removeprefix("file://")) as reader:
+                records.extend({**row, "message": "BATCH"} for row in reader.read_all().to_pylist())
     final_state = next(message["value"] for message in reversed(messages) if message["type"] == "STATE")
     key_properties = next(message["key_properties"] for message in messages if message["type"] == "SCHEMA")
     return records, final_state, key_properties
@@ -125,3 +143,66 @@ def test_update_of_a_since_deleted_document_keeps_its_id(collection):
     resumed, _, _ = _sync(collection, state)
 
     assert [(r["operation_type"], r["object_id"]) for r in resumed] == [("update", id_), ("delete", id_)]
+
+
+def test_no_state_with_arrow_batches_writes_every_document_then_reads_changes(collection, tmp_path, monkeypatch):
+    existing = _ids(3)
+    collection.insert_many([{"_id": id_, "n": 1} for id_ in existing])
+    (during,) = _ids(1)
+
+    def all_tables_then_insert(self, cluster_time):
+        yield from all_tables(self, cluster_time)
+        collection.insert_one({"_id": during})
+
+    all_tables = ArrowExtractor.all_tables
+    monkeypatch.setattr(ArrowExtractor, "all_tables", all_tables_then_insert)
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
+
+    records, state, _ = _sync(collection, batch_config=batch_config)
+
+    assert all(r["message"] == "BATCH" for r in records)
+    assert sorted(r["object_id"] for r in records) == sorted(existing)
+    assert all(r["replication_key"] is None and r["operation_type"] is None for r in records)
+    assert all(r["cluster_time"] is not None for r in records)
+
+    # The bookmark predates the read, so the change made during it comes with the next sync, as a RECORD message
+    monkeypatch.undo()
+    resumed, _, _ = _sync(collection, state, batch_config=batch_config)
+    assert [(r["operation_type"], r["object_id"], "message" in r) for r in resumed] == [("insert", during, False)]
+
+
+def test_arrow_batches_leave_documents_inserted_during_the_read_to_the_change_stream(collection, tmp_path, monkeypatch):
+    # More than one raw batch, so the insert comes before the cursor reaches the end. The `_id` types are mixed, and
+    # the newest `_id` is the ObjectId, which sorts after every string.
+    existing = [*_ids(150), ObjectId()]
+    collection.insert_many([{"_id": id_, "n": 1} for id_ in existing])
+    during = ObjectId()
+
+    def insert_then_table(self, *args, **kwargs):
+        if not collection.find_one({"_id": during}):
+            collection.insert_one({"_id": during, "n": "one"})
+        return table(self, *args, **kwargs)
+
+    table = ArrowExtractor._table
+    monkeypatch.setattr(ArrowExtractor, "_table", insert_then_table)
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
+
+    records, state, _ = _sync(collection, batch_config=batch_config)
+
+    assert len(records) == len(existing)
+    assert all(r["document"]["n"] == 1 for r in records)
+
+    monkeypatch.undo()
+    resumed, _, _ = _sync(collection, state, batch_config=batch_config)
+    assert [(r["operation_type"], r["object_id"]) for r in resumed] == [("insert", str(during))]
+
+
+def test_arrow_batches_key_each_row_like_the_change_events_for_any_id_type(collection, tmp_path):
+    collection.insert_many([{"_id": id_} for id_ in [datetime(2024, 1, 1, tzinfo=timezone.utc), {"a": 1}, "z", 5]])
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
+    records, state, _ = _sync(collection, batch_config=batch_config)
+
+    collection.update_many({}, {"$set": {"n": 1}})
+    resumed, _, _ = _sync(collection, state, batch_config=batch_config)
+
+    assert sorted(r["object_id"] for r in resumed) == sorted(r["object_id"] for r in records)

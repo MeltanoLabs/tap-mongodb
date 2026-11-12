@@ -43,7 +43,9 @@ Setting `batch_config` with the `arrow` format makes INCREMENTAL streams write [
 }
 ```
 
-`batch_size` defaults to 100,000 rows per file, and `storage.root` to a `singer-sdk` folder in the OS temp directory. A STATE message follows each file, so an interrupted sync resumes after the last file written. LOG_BASED streams keep emitting RECORD messages.
+`batch_size` defaults to 100,000 rows per file, and `storage.root` to a `singer-sdk` folder in the OS temp directory. A STATE message follows each file, so an interrupted sync resumes after the last file written.
+
+A `LOG_BASED` stream with no state writes every document to Arrow files, and then stores a resume token from before the read as its bookmark. The sync ends there, and the next sync reads the changes made since as `RECORD` messages. An interrupted sync reads every document again. A change made during the read can come again with the next sync, and replaces the document's row.
 
 Records have the same fields as in RECORD mode, with `document` as an Arrow struct. Before extracting, the tap scans the BSON types of each top-level document field, and converts each field as follows:
 
