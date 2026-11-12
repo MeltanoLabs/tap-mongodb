@@ -356,21 +356,29 @@ class ArrowExtractor:
         if newest is None:
             return
 
-        # `$expr` compares across BSON types, unlike a `$lte` query, which would skip every `_id` of another type
-        yield from self._tables({"$expr": {"$lte": ["$_id", newest["_id"]]}}, cluster_time=cluster_time)
+        # `$expr` compares across BSON types, unlike a `$lte` query, which would skip every `_id` of another type.
+        # The type scan reads every document instead: a bounded scan walks the `_id` index and fetches each document,
+        # which is many times slower than a collection scan, and the types of more documents are still safe to use.
+        yield from self._tables({"$expr": {"$lte": ["$_id", newest["_id"]]}}, cluster_time=cluster_time, scan_query={})
 
-    def _tables(self, query: dict[str, Any], *, cluster_time: datetime | None) -> Iterator[pa.Table]:
+    def _tables(
+        self, query: dict[str, Any], *, cluster_time: datetime | None, scan_query: dict[str, Any] | None = None
+    ) -> Iterator[pa.Table]:
         """Yield the documents matching `query`, in `_id` order, as Arrow tables.
+
+        The type scan reads the documents matching `scan_query`, which defaults to `query`.
 
         Raises:
             RuntimeError: If a field's type changed after the type scan, e.g. a document was updated during the sync.
         """
+        if scan_query is None:
+            scan_query = query
         if self.declared is None:
-            field_types = scan_field_types(self.collection, query, self.session)
+            field_types = scan_field_types(self.collection, scan_query, self.session)
             plan = DocumentPlan.from_field_types(field_types, stream_name=self.stream_name, logger=self.logger)
         else:
             field_types, undeclared = scan_declared_types(
-                self.collection, query, self.declared, self.deselected, self.session
+                self.collection, scan_query, self.declared, self.deselected, self.session
             )
             if undeclared:
                 self.logger.warning(
@@ -379,7 +387,12 @@ class ArrowExtractor:
                     ", ".join(sorted(undeclared)),
                 )
             check_declared_types(
-                self.collection, query, self.declared, field_types, stream_name=self.stream_name, session=self.session
+                self.collection,
+                scan_query,
+                self.declared,
+                field_types,
+                stream_name=self.stream_name,
+                session=self.session,
             )
             plan = DocumentPlan.from_declared(self.declared, field_types)
         schema = Schema(plan.native)
