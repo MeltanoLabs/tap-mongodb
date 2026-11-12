@@ -306,16 +306,20 @@ class MongoDBCollectionStream(Stream):
         The sync ends with the documents. The next one reads the changes made since the token as RECORD messages,
         which can repeat a change that the read already saw.
         """
-        with collection.watch() as change_stream:
-            token = change_stream.resume_token
-        if token is None:
-            msg = (
-                f"Arrow batches for LOG_BASED stream '{self.name}' need a resume token before the change stream's "
-                "first event, which DocumentDB doesn't report. Use RECORD messages instead."
-            )
-            raise RuntimeError(msg)
-        start = collection.database.command("ping")["operationTime"]
-        yield from extractor.all_tables(start.as_datetime())
+        with self._connector.mongo_client.start_session() as session:
+            with collection.watch(session=session) as change_stream:
+                token = change_stream.resume_token
+            start = session.operation_time
+            if token is None or start is None:
+                msg = (
+                    f"Arrow batches for LOG_BASED stream '{self.name}' need a resume token before the change stream's "
+                    "first event, which DocumentDB doesn't report. Use RECORD messages instead."
+                )
+                raise RuntimeError(msg)
+            # A read in the same causally consistent session waits until the server has applied the token's time, so
+            # a lagging secondary can't return documents older than the change stream's start.
+            extractor.session = session
+            yield from extractor.all_tables(start.as_datetime())
         # Only after the last document, so an interrupted sync reads them all again
         self._increment_stream_state({"replication_key": token["_data"]}, context=context)
 

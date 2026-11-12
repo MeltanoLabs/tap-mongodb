@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
     from bson.codec_options import CodecOptions
     from bson.objectid import ObjectId
+    from pymongo.client_session import ClientSession
     from pymongo.collection import Collection
 
 # BSON types (as named by the `$type` aggregation operator) that pymongoarrow decodes natively
@@ -155,12 +156,15 @@ class DocumentPlan:
         return plan
 
 
-def scan_field_types(collection: Collection, query: dict[str, Any]) -> dict[str, set[str]]:
+def scan_field_types(
+    collection: Collection, query: dict[str, Any], session: ClientSession | None = None
+) -> dict[str, set[str]]:
     """Get the BSON types of each top-level field in the documents matching a query, server-side.
 
     Args:
         collection: The collection to scan.
         query: The `find` filter.
+        session: The session to read in.
 
     Returns:
         The `$type` names seen for each top-level field.
@@ -171,7 +175,7 @@ def scan_field_types(collection: Collection, query: dict[str, Any]) -> dict[str,
         {"$unwind": "$field"},
         {"$group": {"_id": "$field.k", "types": {"$addToSet": {"$type": "$field.v"}}}},
     ]
-    return {row["_id"]: set(row["types"]) for row in collection.aggregate(pipeline, allowDiskUse=True)}
+    return {row["_id"]: set(row["types"]) for row in collection.aggregate(pipeline, allowDiskUse=True, session=session)}
 
 
 def scan_declared_types(
@@ -179,6 +183,7 @@ def scan_declared_types(
     query: dict[str, Any],
     fields: list[DeclaredField],
     deselected: list[str],
+    session: ClientSession | None = None,
 ) -> tuple[dict[str, set[str]], set[str]]:
     """Get the BSON types of `_id` and the declared fields, and the undeclared top-level field names, server-side.
 
@@ -187,6 +192,7 @@ def scan_declared_types(
         query: The `find` filter.
         fields: The declared fields.
         deselected: Declared but deselected field names, which aren't reported as undeclared.
+        session: The session to read in.
 
     Returns:
         The `$type` names seen for `_id` and each declared field (`missing` when absent), and the undeclared names.
@@ -215,7 +221,7 @@ def scan_declared_types(
             },
         },
     ]
-    result = next(collection.aggregate(pipeline, allowDiskUse=True), None)
+    result = next(collection.aggregate(pipeline, allowDiskUse=True, session=session), None)
     if result is None:
         return {}, set()
     return {name: set(result[alias]) for name, alias in aliases.items()}, set(result["undeclared"])
@@ -228,6 +234,7 @@ def check_declared_types(
     field_types: dict[str, set[str]],
     *,
     stream_name: str,
+    session: ClientSession | None = None,
 ) -> None:
     """Fail if a declared field has a value of a BSON type its declared type doesn't accept.
 
@@ -245,6 +252,7 @@ def check_declared_types(
                 {"$and": [query, {declared.name: {"$type": disallowed}}]},
                 {"_id": 1, declared.name: 1},
                 sort=[("_id", ASCENDING)],
+                session=session,
             )
             object_id = example["_id"] if example else "?"
             bson_type = disallowed[0] if len(disallowed) == 1 else " or ".join(disallowed)
@@ -307,6 +315,8 @@ class ArrowExtractor:
     """The selected declared fields with the `flat` document layout, or None for the `object` layout."""
     deselected: list[str] = field(default_factory=list)
     """Declared but deselected field names with the `flat` document layout, which aren't reported as undeclared."""
+    session: ClientSession | None = None
+    """The session for every read, or None for an implicit session per read."""
 
     def tables(self, start: ObjectId) -> Iterator[pa.Table]:
         """Yield the documents after `start`, in `_id` order, as Arrow tables.
@@ -350,23 +360,27 @@ class ArrowExtractor:
             RuntimeError: If a field's type changed after the type scan, e.g. a document was updated during the sync.
         """
         if self.declared is None:
-            field_types = scan_field_types(self.collection, query)
+            field_types = scan_field_types(self.collection, query, self.session)
             plan = DocumentPlan.from_field_types(field_types, stream_name=self.stream_name, logger=self.logger)
         else:
-            field_types, undeclared = scan_declared_types(self.collection, query, self.declared, self.deselected)
+            field_types, undeclared = scan_declared_types(
+                self.collection, query, self.declared, self.deselected, self.session
+            )
             if undeclared:
                 self.logger.warning(
                     "Stream '%s' uses the flat document layout, so these undeclared document fields are dropped: %s",
                     self.stream_name,
                     ", ".join(sorted(undeclared)),
                 )
-            check_declared_types(self.collection, query, self.declared, field_types, stream_name=self.stream_name)
+            check_declared_types(
+                self.collection, query, self.declared, field_types, stream_name=self.stream_name, session=self.session
+            )
             plan = DocumentPlan.from_declared(self.declared, field_types)
         schema = Schema(plan.native)
         codec_options = self.collection.codec_options
 
         try:
-            for raw_batch in self.collection.find_raw_batches(query, sort=[("_id", ASCENDING)]):
+            for raw_batch in self.collection.find_raw_batches(query, sort=[("_id", ASCENDING)], session=self.session):
                 yield self._table(raw_batch, plan, schema, codec_options, cluster_time=cluster_time)
         except TypeError as error:
             # pymongoarrow raises this for a value that doesn't match the schema, without naming the field
@@ -443,7 +457,9 @@ class ArrowExtractor:
             first, last = documents[0]["_id"], documents[-1]["_id"]
         batch_range = {"_id": {"$gte": first, "$lte": last}}
         clauses = [_has_type(name, types) for name, types in checks.items()]
-        document = self.collection.find_one({**batch_range, "$or": clauses}, sort=[("_id", ASCENDING)])
+        document = self.collection.find_one(
+            {**batch_range, "$or": clauses}, sort=[("_id", ASCENDING)], session=self.session
+        )
         if document is None:
             return
 
