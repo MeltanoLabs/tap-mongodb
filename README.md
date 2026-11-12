@@ -22,7 +22,9 @@ The tap supports two replication modes:
 
 ### 2. **LOG_BASED** (CDC - Change Data Capture)
 - Captures change events via MongoDB Change Streams
+- Extracts every document first when the stream has no state, as records with no operation type or replication key, and the extraction's start as their cluster time
 - Tracks insert, update, replace, and delete operations
+- Keeps one row per document: the stream's key is `object_id`, so each change replaces the row of the document it changed, and a delete leaves the row with the `delete` operation type
 - Requires MongoDB replica set or sharded cluster
 - Includes operation metadata, cluster timestamps, and full document state
 - Automatically exits after 10 seconds of inactivity (production-ready)
@@ -41,7 +43,9 @@ Setting `batch_config` with the `arrow` format makes INCREMENTAL streams write [
 }
 ```
 
-`batch_size` defaults to 100,000 rows per file, and `storage.root` to a `singer-sdk` folder in the OS temp directory. A STATE message follows each file, so an interrupted sync resumes after the last file written. LOG_BASED streams keep emitting RECORD messages.
+`batch_size` defaults to 100,000 rows per file, and `storage.root` to a `singer-sdk` folder in the OS temp directory. A STATE message follows each file, so an interrupted sync resumes after the last file written.
+
+A `LOG_BASED` stream with no state writes every document to Arrow files, and then stores a resume token from before the read as its bookmark. The sync ends there, and the next sync reads the changes made since as `RECORD` messages. An interrupted sync reads every document again. A change made during the read can come again with the next sync, and replaces the document's row.
 
 Records have the same fields as in RECORD mode, with `document` as an Arrow struct. Before extracting, the tap scans the BSON types of each top-level document field, and converts each field as follows:
 
@@ -113,8 +117,11 @@ uv tool install git+https://github.com/MeltanoLabs/tap-mongodb.git@main
 
 | Setting                                  | Type         | Required |               Default               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 |:-----------------------------------------|------------- |:--------:|:-----------------------------------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| database                                 | string       |   True   |                  -                  | Database from which records will be extracted.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| databases                                | string[]     |  False   |                 []                  | Databases from which records will be extracted. All databases except `admin`, `local` and `config` are extracted by default. Takes precedence over `database`. Each stream is named `<database>-<collection>`.                                                                                                                                                                                                                                                                                                                                                                               |
+| database                                 | string       |  False   |                  -                  | Deprecated: use `databases` instead. Database from which records will be extracted. Each stream is named `<collection>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | mongodb_connection_string                | password     |  False   |                  -                  | MongoDB connection string. See [the MongoDB documentation](https://www.mongodb.com/docs/manual/reference/connection-string/#connection-string-uri-format) for specification. The username and password included in this string must be url-encoded - the tap will not url-encode it.                                                                                                                                                                                                                                                                                                         |
+| username                                 | string       |  False   |                  -                  | Username to authenticate with. Takes precedence over the username in the connection string.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| password                                 | password     |  False   |                  -                  | Password to authenticate with, not url-encoded. Takes precedence over the password in the connection string.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | documentdb_credential_json_string        | password     |  False   |                  -                  | JSON string with keys 'username', 'password', 'engine', 'host', 'port', 'dbClusterIdentifier' or 'dbName', 'ssl'. See example and strucure [in the AWS documentation here](https://docs.aws.amazon.com/secretsmanager/latest/userguide/reference_secret_json_structure.html#reference_secret_json_structure_docdb). The password from this JSON object will be url-encoded by the tap before opening the database connection. The intent of this setting is to enable management of an AWS DocumentDB database credential via AWS SecretsManager                                             |
 | documentdb_credential_json_extra_options | string       |  False   |                  -                  | JSON string containing key-value pairs which will be added to the connection string options when using documentdb_credential_json_string. For example, when set to the string `{"tls":"true","tlsCAFile":"my-ca-bundle.pem"}`, the options `tls=true&tlsCAFile=my-ca-bundle.pem` will be passed to the MongoClient.                                                                                                                                                                                                                                                                          |
 | datetime_conversion                      | string       |  False   |              datetime               | Parameter passed to MongoClient 'datetime_conversion' parameter. See documentation at https://pymongo.readthedocs.io/en/stable/examples/datetimes.html#handling-out-of-range-datetimes for details. The default value is 'datetime', which will throw a bson.errors.InvalidBson error if a document contains a date outside the range of datetime.MINYEAR (year 1) to datetime.MAXYEAR (9999).                                                                                                                                                                                               |
@@ -234,10 +241,13 @@ meltano run tap-mongodb-cdc target-jsonl
 ```
 
 The tap will:
-1. Open a change stream for each collection
-2. Yield a resume token to track position
-3. Process any existing change events
-4. Automatically exit after 10 seconds of inactivity
+1. Extract every document of a collection that has no state yet, as records with no operation type or replication key, and the extraction's start as their cluster time
+2. Open a change stream for each collection, from the start of step 1 if it ran
+3. Store a resume token to track position
+4. Process any existing change events
+5. Automatically exit after 10 seconds of inactivity
+
+The change stream starts at the latest write before step 1, so a change made around that time can be read twice, and the later read replaces the row. The oplog must hold the changes made during step 1 until it ends, or the change stream can't open.
 
 ### CDC Output Format
 
@@ -354,6 +364,8 @@ The tap automatically exits after 10 seconds of inactivity:
 2. Update connection string to include `?replicaSet=rs0`
 3. Clear existing state: `rm -rf .meltano/extractors/tap-mongodb/`
 4. Use `tap-mongodb-cdc` plugin or update metadata to `LOG_BASED`
+
+A `LOG_BASED` table from a version that keyed each change event on `replication_key` holds several rows per document, so it can't merge on `object_id`. Drop the table and clear the state before the first sync with this version.
 
 **From LOG_BASED to INCREMENTAL:**
 1. Update connection string (can remove replica set parameters)
