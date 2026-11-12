@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
     from bson.codec_options import CodecOptions
     from bson.objectid import ObjectId
+    from pymongo.client_session import ClientSession
     from pymongo.collection import Collection
 
 # BSON types (as named by the `$type` aggregation operator) that pymongoarrow decodes natively
@@ -130,7 +131,11 @@ class DocumentPlan:
         Returns:
             The conversion plan, which also decodes `_id` for the record envelope.
         """
-        plan = cls(native={"_id": ObjectIdType()})
+        plan = (
+            cls(native={"_id": ObjectIdType()})
+            if field_types.get("_id", set()) <= {"objectId"}
+            else cls(as_string=["_id"])
+        )
         for declared in fields:
             seen = field_types.get(declared.name, set()) - {"null", "missing"}
             if declared.kind in {"integer", "number", "boolean", "date-time"}:
@@ -151,12 +156,15 @@ class DocumentPlan:
         return plan
 
 
-def scan_field_types(collection: Collection, query: dict[str, Any]) -> dict[str, set[str]]:
+def scan_field_types(
+    collection: Collection, query: dict[str, Any], session: ClientSession | None = None
+) -> dict[str, set[str]]:
     """Get the BSON types of each top-level field in the documents matching a query, server-side.
 
     Args:
         collection: The collection to scan.
         query: The `find` filter.
+        session: The session to read in.
 
     Returns:
         The `$type` names seen for each top-level field.
@@ -167,7 +175,7 @@ def scan_field_types(collection: Collection, query: dict[str, Any]) -> dict[str,
         {"$unwind": "$field"},
         {"$group": {"_id": "$field.k", "types": {"$addToSet": {"$type": "$field.v"}}}},
     ]
-    return {row["_id"]: set(row["types"]) for row in collection.aggregate(pipeline, allowDiskUse=True)}
+    return {row["_id"]: set(row["types"]) for row in collection.aggregate(pipeline, allowDiskUse=True, session=session)}
 
 
 def scan_declared_types(
@@ -175,6 +183,7 @@ def scan_declared_types(
     query: dict[str, Any],
     fields: list[DeclaredField],
     deselected: list[str],
+    session: ClientSession | None = None,
 ) -> tuple[dict[str, set[str]], set[str]]:
     """Get the BSON types of `_id` and the declared fields, and the undeclared top-level field names, server-side.
 
@@ -183,6 +192,7 @@ def scan_declared_types(
         query: The `find` filter.
         fields: The declared fields.
         deselected: Declared but deselected field names, which aren't reported as undeclared.
+        session: The session to read in.
 
     Returns:
         The `$type` names seen for `_id` and each declared field (`missing` when absent), and the undeclared names.
@@ -211,7 +221,7 @@ def scan_declared_types(
             },
         },
     ]
-    result = next(collection.aggregate(pipeline, allowDiskUse=True), None)
+    result = next(collection.aggregate(pipeline, allowDiskUse=True, session=session), None)
     if result is None:
         return {}, set()
     return {name: set(result[alias]) for name, alias in aliases.items()}, set(result["undeclared"])
@@ -224,6 +234,7 @@ def check_declared_types(
     field_types: dict[str, set[str]],
     *,
     stream_name: str,
+    session: ClientSession | None = None,
 ) -> None:
     """Fail if a declared field has a value of a BSON type its declared type doesn't accept.
 
@@ -241,6 +252,7 @@ def check_declared_types(
                 {"$and": [query, {declared.name: {"$type": disallowed}}]},
                 {"_id": 1, declared.name: 1},
                 sort=[("_id", ASCENDING)],
+                session=session,
             )
             object_id = example["_id"] if example else "?"
             bson_type = disallowed[0] if len(disallowed) == 1 else " or ".join(disallowed)
@@ -303,6 +315,8 @@ class ArrowExtractor:
     """The selected declared fields with the `flat` document layout, or None for the `object` layout."""
     deselected: list[str] = field(default_factory=list)
     """Declared but deselected field names with the `flat` document layout, which aren't reported as undeclared."""
+    session: ClientSession | None = None
+    """The session for every read, or None for an implicit session per read."""
 
     def tables(self, start: ObjectId) -> Iterator[pa.Table]:
         """Yield the documents after `start`, in `_id` order, as Arrow tables.
@@ -317,36 +331,76 @@ class ArrowExtractor:
             One table per raw batch returned by the server.
 
         Raises:
-            TypeError: If `_id` isn't always an ObjectId.
             RuntimeError: If a field's type changed after the type scan, e.g. a document was updated during the sync.
         """
         newest = self.collection.find_one({"_id": {"$gt": start}}, {"_id": 1}, sort=[("_id", DESCENDING)])
         if newest is None:
             return
 
-        query = {"_id": {"$gt": start, "$lte": newest["_id"]}}
+        yield from self._tables({"_id": {"$gt": start, "$lte": newest["_id"]}}, cluster_time=None)
+
+    def all_tables(self, cluster_time: datetime) -> Iterator[pa.Table]:
+        """Yield every document, in `_id` order, as Arrow tables of a LOG_BASED stream's records.
+
+        The read is bounded by the newest `_id` when it starts, as in `tables`, so a document inserted during the read
+        can't bring fields or types the type scan didn't see. A document changed during the read can differ from what
+        the read returns. The change stream read after it brings the inserts and replaces the changed rows.
+
+        Args:
+            cluster_time: The cluster time from before the read, which every row gets as its `cluster_time`.
+
+        Yields:
+            One table per raw batch returned by the server.
+        """
+        newest = self.collection.find_one({}, {"_id": 1}, sort=[("_id", DESCENDING)], session=self.session)
+        if newest is None:
+            return
+
+        # `$expr` compares across BSON types, unlike a `$lte` query, which would skip every `_id` of another type.
+        # The type scan reads every document instead: a bounded scan walks the `_id` index and fetches each document,
+        # which is many times slower than a collection scan, and the types of more documents are still safe to use.
+        yield from self._tables({"$expr": {"$lte": ["$_id", newest["_id"]]}}, cluster_time=cluster_time, scan_query={})
+
+    def _tables(
+        self, query: dict[str, Any], *, cluster_time: datetime | None, scan_query: dict[str, Any] | None = None
+    ) -> Iterator[pa.Table]:
+        """Yield the documents matching `query`, in `_id` order, as Arrow tables.
+
+        The type scan reads the documents matching `scan_query`, which defaults to `query`.
+
+        Raises:
+            RuntimeError: If a field's type changed after the type scan, e.g. a document was updated during the sync.
+        """
+        if scan_query is None:
+            scan_query = query
         if self.declared is None:
-            field_types = scan_field_types(self.collection, query)
+            field_types = scan_field_types(self.collection, scan_query, self.session)
             plan = DocumentPlan.from_field_types(field_types, stream_name=self.stream_name, logger=self.logger)
         else:
-            field_types, undeclared = scan_declared_types(self.collection, query, self.declared, self.deselected)
+            field_types, undeclared = scan_declared_types(
+                self.collection, scan_query, self.declared, self.deselected, self.session
+            )
             if undeclared:
                 self.logger.warning(
                     "Stream '%s' uses the flat document layout, so these undeclared document fields are dropped: %s",
                     self.stream_name,
                     ", ".join(sorted(undeclared)),
                 )
-            check_declared_types(self.collection, query, self.declared, field_types, stream_name=self.stream_name)
+            check_declared_types(
+                self.collection,
+                scan_query,
+                self.declared,
+                field_types,
+                stream_name=self.stream_name,
+                session=self.session,
+            )
             plan = DocumentPlan.from_declared(self.declared, field_types)
-        if field_types.get("_id", {"objectId"}) != {"objectId"}:
-            msg = f"Incremental replication of stream '{self.stream_name}' requires every `_id` to be an ObjectId."
-            raise TypeError(msg)
         schema = Schema(plan.native)
         codec_options = self.collection.codec_options
 
         try:
-            for raw_batch in self.collection.find_raw_batches(query, sort=[("_id", ASCENDING)]):
-                yield self._table(raw_batch, plan, schema, codec_options)
+            for raw_batch in self.collection.find_raw_batches(query, sort=[("_id", ASCENDING)], session=self.session):
+                yield self._table(raw_batch, plan, schema, codec_options, cluster_time=cluster_time)
         except TypeError as error:
             # pymongoarrow raises this for a value that doesn't match the schema, without naming the field
             msg = (
@@ -355,44 +409,60 @@ class ArrowExtractor:
             )
             raise RuntimeError(msg) from error
 
-    def _table(self, raw_batch: bytes, plan: DocumentPlan, schema: Schema, codec_options: CodecOptions) -> pa.Table:
+    def _table(
+        self,
+        raw_batch: bytes,
+        plan: DocumentPlan,
+        schema: Schema,
+        codec_options: CodecOptions,
+        *,
+        cluster_time: datetime | None,
+    ) -> pa.Table:
         context = PyMongoArrowContext(schema, codec_options)
         context.process_bson_stream(raw_batch)
         native = context.finish()
-        self._check_silent_coercions(native, plan)
+        documents = bson.decode_all(raw_batch, codec_options) if plan.python_fields else []
+        self._check_silent_coercions(native, plan, documents)
 
         fields = {name: _conform(native[name].combine_chunks()) for name in plan.native}
-        if plan.python_fields:
-            documents = bson.decode_all(raw_batch, codec_options)
-            for name in plan.as_string:
-                fields[name] = pa.array([as_record_string(doc.get(name)) for doc in documents], type=pa.string())
-            for name in plan.as_json:
-                fields[name] = pa.array([_as_json(doc.get(name)) for doc in documents], type=pa.json_())
+        for name in plan.as_string:
+            fields[name] = pa.array([as_record_string(doc.get(name)) for doc in documents], type=pa.string())
+        for name in plan.as_json:
+            fields[name] = pa.array([_as_json(doc.get(name)) for doc in documents], type=pa.json_())
 
-        object_ids = native["_id"].combine_chunks()
-        hexes = object_id_hex(object_ids)
-        rows = native.num_rows
-        table = {
-            "replication_key": incremental_ids(object_ids, hexes),
-            "object_id": hexes,
-        }
+        rows = len(fields["_id"])
+        if cluster_time is None:
+            object_ids = native["_id"].combine_chunks()
+            hexes = object_id_hex(object_ids)
+            table = {"replication_key": incremental_ids(object_ids, hexes), "object_id": hexes}
+        else:
+            # A change event keys its row with `str(_id)`, so the row it replaces must have the same key
+            object_ids = (
+                fields["_id"].cast(pa.string())
+                if "_id" in plan.native
+                else pa.array([str(document["_id"]) for document in documents], type=pa.string())
+            )
+            # No replication key, so a document never becomes the bookmark
+            table = {"replication_key": pa.nulls(rows, pa.string()), "object_id": object_ids}
         if self.declared is None:
             table["document"] = pa.StructArray.from_arrays(list(fields.values()), names=list(fields))
         else:
             table.update((declared.name, fields[declared.name]) for declared in self.declared)
         table |= {
             "operation_type": pa.nulls(rows, pa.string()),
-            "cluster_time": pa.nulls(rows, _TIMESTAMP_TYPE),
+            "cluster_time": pa.array([cluster_time] * rows, type=_TIMESTAMP_TYPE),
             "namespace": pa.array(
                 [{"database": self.collection.database.name, "collection": self.collection.name}] * rows,
                 type=_NAMESPACE_TYPE,
             ),
         }
         if self.add_record_metadata:
-            table["_sdc_batched_at"] = pa.array([datetime.now(timezone.utc)] * rows, type=_TIMESTAMP_TYPE)
+            now = pa.array([datetime.now(timezone.utc)] * rows, type=_TIMESTAMP_TYPE)
+            table["_sdc_extracted_at"] = now
+            table["_sdc_batched_at"] = now
         return pa.table(table)
 
-    def _check_silent_coercions(self, native: pa.Table, plan: DocumentPlan) -> None:
+    def _check_silent_coercions(self, native: pa.Table, plan: DocumentPlan, documents: list[dict[str, Any]]) -> None:
         """Fail if a numeric column got a value pymongoarrow coerces silently instead of raising `TypeError`.
 
         The type scan rules these values out when the sync starts, but a document updated during the sync can still
@@ -405,10 +475,16 @@ class ArrowExtractor:
         if not checks or native.num_rows == 0:
             return
 
-        object_ids = native["_id"].combine_chunks()
-        batch_range = {"_id": {"$gte": object_ids[0].as_py(), "$lte": object_ids[-1].as_py()}}
+        if "_id" in plan.native:
+            ids = native["_id"].combine_chunks()
+            first, last = ids[0].as_py(), ids[-1].as_py()
+        else:
+            first, last = documents[0]["_id"], documents[-1]["_id"]
+        batch_range = {"_id": {"$gte": first, "$lte": last}}
         clauses = [_has_type(name, types) for name, types in checks.items()]
-        document = self.collection.find_one({**batch_range, "$or": clauses}, sort=[("_id", ASCENDING)])
+        document = self.collection.find_one(
+            {**batch_range, "$or": clauses}, sort=[("_id", ASCENDING)], session=self.session
+        )
         if document is None:
             return
 

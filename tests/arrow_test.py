@@ -81,6 +81,7 @@ def _mock_stream(replication_method: str) -> MongoDBCollectionStream:
     tap.initialized_at = 0
     tap.name = "tap-mongodb"
     catalog_entry = {
+        "database_name": "my_database",
         "table_name": "my_collection",
         "tap_stream_id": "my_collection",
         "schema": {"type": "object", "properties": {}},
@@ -103,8 +104,10 @@ def test_batch_config_arrow_defaults_to_larger_files():
 
 def test_batch_config_arrow_change_streams_emit_records():
     stream = _mock_stream(REPLICATION_LOG_BASED)
+    assert stream.get_batch_config({"batch_config": {"encoding": {"format": "arrow"}}}) is not None
+
+    stream.get_context_state(None)["replication_key_value"] = "8200"
     assert stream.get_batch_config({"batch_config": {"encoding": {"format": "arrow"}}}) is None
-    assert stream.get_record_batches(None) is None
 
 
 def test_batch_config_jsonl_change_streams_unchanged():
@@ -284,9 +287,14 @@ def test_arrow_batches_add_record_metadata(collection, tmp_path):
     collection.insert_one({"count": 1})
     config_messages = _sync_with_metadata(collection, tmp_path)
     (row,) = _batch_rows(config_messages)
-    assert isinstance(row["_sdc_batched_at"], datetime)
-    assert row["_sdc_batched_at"].tzinfo is not None
-    assert row["_sdc_batched_at"] <= datetime.now(timezone.utc)
+    for column in ("_sdc_extracted_at", "_sdc_batched_at"):
+        assert isinstance(row[column], datetime)
+        assert row[column].tzinfo is not None
+        assert row[column] <= datetime.now(timezone.utc)
+
+    (row,) = _batch_rows(_sync(collection, tmp_path, batch=True))
+    assert "_sdc_extracted_at" not in row
+    assert "_sdc_batched_at" not in row
 
 
 def _sync_with_metadata(collection, tmp_path) -> list[dict]:

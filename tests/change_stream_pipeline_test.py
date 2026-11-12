@@ -21,9 +21,10 @@ def _make_stream(config: dict) -> tuple[MongoDBCollectionStream, MagicMock]:
     connector = MagicMock()
     connector.version = (6, 0)
     collection = MagicMock()
-    connector.database.__getitem__.return_value = collection
+    connector.mongo_client.__getitem__.return_value.__getitem__.return_value = collection
 
     catalog_entry = {
+        "database_name": "my_database",
         "table_name": "my_collection",
         "tap_stream_id": "my_collection",
         "schema": {"type": "object", "properties": {}},
@@ -49,7 +50,8 @@ def test_change_stream_pipeline_is_forwarded_to_watch():
 
     list(stream.get_records(context=None))
 
-    collection.watch.assert_called_once_with(full_document="updateLookup", pipeline=pipeline)
+    collection.watch.assert_called_once()
+    assert collection.watch.call_args.kwargs.items() >= {"full_document": "updateLookup", "pipeline": pipeline}.items()
 
 
 def test_change_stream_pipeline_defaults_to_empty_list():
@@ -59,4 +61,5 @@ def test_change_stream_pipeline_defaults_to_empty_list():
 
     list(stream.get_records(context=None))
 
-    collection.watch.assert_called_once_with(full_document="updateLookup", pipeline=[])
+    collection.watch.assert_called_once()
+    assert collection.watch.call_args.kwargs.items() >= {"full_document": "updateLookup", "pipeline": []}.items()

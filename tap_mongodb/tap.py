@@ -25,10 +25,24 @@ class TapMongoDB(Tap):
 
     config_jsonschema = th.PropertiesList(
         th.Property(
+            "databases",
+            th.ArrayType(th.StringType),
+            required=False,
+            default=[],
+            description=(
+                "Databases from which records will be extracted (default: all except `admin`, `local` and `config`). "
+                "Takes precedence over `database`. Each stream is named `<database>-<collection>`."
+            ),
+        ),
+        th.Property(
             "database",
             th.StringType,
-            required=True,
-            description="Database name from which records will be extracted.",
+            required=False,
+            deprecated=True,
+            description=(
+                "Database name from which records will be extracted. Each stream is named `<collection>`. "
+                "Deprecated: use `databases` instead."
+            ),
         ),
         th.Property(
             "mongodb_connection_string",
@@ -39,6 +53,22 @@ class TapMongoDB(Tap):
                 "MongoDB connection string. See "
                 "https://www.mongodb.com/docs/manual/reference/connection-string/#connection-string-uri-format "
                 "for specification."
+            ),
+        ),
+        th.Property(
+            "username",
+            th.StringType,
+            required=False,
+            description="Username to authenticate with. Takes precedence over the username in the connection string.",
+        ),
+        th.Property(
+            "password",
+            th.StringType,
+            required=False,
+            secret=True,
+            description=(
+                "Password to authenticate with, not url-encoded. Takes precedence over the password in the connection "
+                "string."
             ),
         ),
         th.Property(
@@ -246,14 +276,24 @@ class TapMongoDB(Tap):
     @cached_property
     def connector(self) -> MongoDBConnector:
         """Get MongoDBConnector instance. Instance is cached and reused."""
+        options = self._get_mongo_options()
+        # `MongoClient` reads a `None` credential as no credential, and drops the one in the connection string.
+        if "username" in self.config:
+            options["username"] = self.config["username"]
+        if "password" in self.config:
+            options["password"] = self.config["password"]
+        databases = self.config["databases"]
+        # `database` predates `databases`, so it keeps the stream names from before them.
+        legacy_database = not databases and bool(self.config.get("database"))
         return MongoDBConnector(
             self._get_mongo_connection_string(),
-            self._get_mongo_options(),
-            self.config.get("database"),
+            options,
+            [self.config["database"]] if legacy_database else databases,
             self.config.get("datetime_conversion"),
             prefix=self.config.get("prefix", None),
             collections=self.config["filter_collections"],
             add_record_metadata=self.config.get("add_record_metadata", False),
+            qualify_stream_names=not legacy_database,
         )
 
     @property
