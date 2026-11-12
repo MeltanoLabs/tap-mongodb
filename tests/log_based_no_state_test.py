@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pyarrow as pa
 import pytest
-from bson import Binary, ObjectId
+from bson import Binary, DatetimeMS, ObjectId
 from bson.binary import UuidRepresentation
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
@@ -227,3 +227,11 @@ def test_uuids_are_emitted_as_uuid_strings(collection, tmp_path, arrow, uri_opti
 
     assert [r["operation_type"] for r in resumed] == ["update"]
     assert {(r["object_id"], r["document"]["ref"]) for r in records + resumed} == {(str(value), str(value))}
+
+
+def test_a_date_out_of_range_loads_with_the_connection_string_conversion(collection):
+    collection.insert_one({"date": DatetimeMS(-62135596800001)})  # A millisecond before the year 1
+    uri = f"{MONGODB_URI}{'&' if '?' in MONGODB_URI else '?'}datetime_conversion=DATETIME_CLAMP"
+    records, _, _ = _sync(collection, uri=uri)
+
+    assert {r["document"]["date"] for r in records} == {"0001-01-01T00:00:00"}

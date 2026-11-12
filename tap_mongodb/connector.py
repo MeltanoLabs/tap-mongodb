@@ -27,7 +27,6 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         connection_string: str,
         options: dict[str, Any],
         databases: list[str],
-        datetime_conversion: str,
         prefix: str | None = None,
         collections: list[str] | None = None,
         add_record_metadata: bool = False,
@@ -36,7 +35,6 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
         self._connection_string = connection_string
         self._options = options
         self._databases = databases
-        self._datetime_conversion: str = datetime_conversion.upper()
         self._prefix: str | None = prefix
         self._collections = collections
         self._add_record_metadata = add_record_metadata
@@ -47,11 +45,10 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
     @cached_property
     def mongo_client(self) -> MongoClient:
         """Provide a MongoClient instance. Client is cached and reused."""
-        options = {"datetime_conversion": self._datetime_conversion, **self._options}
-        client: MongoClient = MongoClient(self._connection_string, connect=False, **options)
+        client: MongoClient = MongoClient(self._connection_string, connect=False, **self._options)
         # A keyword argument overrides the connection string, so set the UUID representation only when it sets none
         if client.codec_options.uuid_representation == UuidRepresentation.UNSPECIFIED:
-            client = MongoClient(self._connection_string, uuidRepresentation="standard", **options)
+            client = MongoClient(self._connection_string, uuidRepresentation="standard", **self._options)
         try:
             server_info: dict[str, Any] = client.server_info()
             version_array: list[int] = server_info["versionArray"]

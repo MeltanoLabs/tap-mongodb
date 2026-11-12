@@ -10,7 +10,6 @@ def _connector(*, add_record_metadata: bool) -> MongoDBConnector:
         "mongodb://localhost:27017",
         {},
         ["db"],
-        "datetime",
         add_record_metadata=add_record_metadata,
     )
 

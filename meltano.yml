@@ -49,6 +49,8 @@ plugins:
         https://www.mongodb.com/docs/manual/reference/connection-string/#connection-string-uri-format for specification.
         The password included in this string should be url-encoded. The tap will not url-encode it.
         UUIDs decode with the `standard` representation unless the connection string sets `uuidRepresentation`.
+        A date outside the years 1 to 9999 fails the sync unless the connection string sets `datetime_conversion`,
+        such as `datetime_conversion=DATETIME_CLAMP`.
       sensitive: true
     - name: username
       kind: string
@@ -73,17 +75,6 @@ plugins:
         connection string options when using documentdb_credential_json_string. For example, when set to
         the string `{\"tls\":\"true\",\"tlsCAFile\":\"my-ca-bundle.pem\"}`, the options
         `tls=true&tlsCAFile=my-ca-bundle.pem` will be passed to the MongoClient.
-    - name: datetime_conversion
-      kind: string
-      value: datetime
-      description: |
-        Parameter passed to MongoClient 'datetime_conversion' parameter. See documentation at
-        https://pymongo.readthedocs.io/en/stable/examples/datetimes.html#handling-out-of-range-datetimes
-        for details. The default value is 'datetime', which will throw a bson.errors.InvalidBson error
-        if a document contains a date outside the range of datetime.MINYEAR (year 1) to datetime.MAXYEAR
-        (9999). The allowed values correspond to the enumeration members here:
-        https://github.com/mongodb/mongo-python-driver/blob/e23eb7691e6e2905a77fc39a114d000ddf057e47/bson/codec_options.py#L192-L224
-        (they will be uppercased by the tap).
     - name: prefix
       kind: string
       value: ''
