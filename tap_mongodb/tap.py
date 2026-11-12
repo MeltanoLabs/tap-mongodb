@@ -53,7 +53,8 @@ class TapMongoDB(Tap):
                 "MongoDB connection string. See "
                 "https://www.mongodb.com/docs/manual/reference/connection-string/#connection-string-uri-format "
                 "for specification. UUIDs decode with the `standard` representation unless the connection string "
-                "sets `uuidRepresentation`."
+                "sets `uuidRepresentation`. A date outside the years 1 to 9999 fails the sync unless the connection "
+                "string sets `datetime_conversion`, such as `datetime_conversion=DATETIME_CLAMP`."
             ),
         ),
         th.Property(
@@ -96,28 +97,6 @@ class TapMongoDB(Tap):
                 'the string `{"tls":"true","tlsCAFile":"my-ca-bundle.pem"}`, the options '
                 "`tls=true&tlsCAFile=my-ca-bundle.pem` will be passed to the MongoClient."
             ),
-        ),
-        th.Property(
-            "datetime_conversion",
-            th.StringType,
-            required=False,
-            default="datetime",
-            description=(
-                "Parameter passed to MongoClient 'datetime_conversion' parameter. See documentation at "
-                "https://pymongo.readthedocs.io/en/stable/examples/datetimes.html#handling-out-of-range-datetimes "
-                "for details. The default value is 'datetime', which will throw a bson.errors.InvalidBson error "
-                "if a document contains a date outside the range of datetime.MINYEAR (year 1) to datetime.MAXYEAR "
-                "(9999). The allowed values correspond to the enumeration members here: "
-                # pylint: disable-next=line-too-long
-                "https://github.com/mongodb/mongo-python-driver/blob/e23eb7691e6e2905a77fc39a114d000ddf057e47/bson/codec_options.py#L192-L224"
-                " (they will be uppercased by the tap)."
-            ),
-            allowed_values=[
-                "datetime_ms",
-                "datetime",
-                "datetime_auto",
-                "datetime_clamp",
-            ],
         ),
         th.Property(
             "prefix",
@@ -290,7 +269,6 @@ class TapMongoDB(Tap):
             self._get_mongo_connection_string(),
             options,
             [self.config["database"]] if legacy_database else databases,
-            self.config.get("datetime_conversion"),
             prefix=self.config.get("prefix", None),
             collections=self.config["filter_collections"],
             add_record_metadata=self.config.get("add_record_metadata", False),
