@@ -11,7 +11,8 @@ from uuid import uuid4
 
 import pyarrow as pa
 import pytest
-from bson import ObjectId
+from bson import Binary, ObjectId
+from bson.binary import UuidRepresentation
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
@@ -38,14 +39,14 @@ def collection():
 
 
 def _sync(
-    collection, state: dict | None = None, batch_config: dict | None = None
+    collection, state: dict | None = None, batch_config: dict | None = None, uri: str = MONGODB_URI
 ) -> tuple[list[dict], dict, list[str]]:
     """Sync the collection with LOG_BASED replication, and return its records, final state and key properties.
 
     The records include the rows of Arrow batch files, where the message has a `BATCH` type.
     """
     config = {
-        "mongodb_connection_string": MONGODB_URI,
+        "mongodb_connection_string": uri,
         "database": collection.database.name,
         "filter_collections": [collection.name],
     }
@@ -206,3 +207,23 @@ def test_arrow_batches_key_each_row_like_the_change_events_for_any_id_type(colle
     resumed, _, _ = _sync(collection, state, batch_config=batch_config)
 
     assert sorted(r["object_id"] for r in resumed) == sorted(r["object_id"] for r in records)
+
+
+@pytest.mark.parametrize("arrow", [False, True], ids=["records", "arrow"])
+@pytest.mark.parametrize(
+    ("uri_option", "stored_as"),
+    [("", UuidRepresentation.STANDARD), ("uuidRepresentation=javaLegacy", UuidRepresentation.JAVA_LEGACY)],
+    ids=["default", "connection-string"],
+)
+def test_uuids_are_emitted_as_uuid_strings(collection, tmp_path, arrow, uri_option, stored_as):
+    value = uuid4()
+    collection.insert_one({"_id": Binary.from_uuid(value, stored_as), "ref": Binary.from_uuid(value, stored_as)})
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}} if arrow else None
+    uri = f"{MONGODB_URI}{'&' if '?' in MONGODB_URI else '?'}{uri_option}" if uri_option else MONGODB_URI
+    records, state, _ = _sync(collection, batch_config=batch_config, uri=uri)
+
+    collection.update_one({}, {"$set": {"n": 1}})
+    resumed, _, _ = _sync(collection, state, batch_config=batch_config, uri=uri)
+
+    assert [r["operation_type"] for r in resumed] == ["update"]
+    assert {(r["object_id"], r["document"]["ref"]) for r in records + resumed} == {(str(value), str(value))}

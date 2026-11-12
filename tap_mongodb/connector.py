@@ -5,6 +5,7 @@ from functools import cached_property
 from logging import Logger, getLogger
 from typing import Any, TypeAlias
 
+from bson.binary import UuidRepresentation
 from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.errors import OperationFailure, PyMongoError
@@ -46,9 +47,11 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
     @cached_property
     def mongo_client(self) -> MongoClient:
         """Provide a MongoClient instance. Client is cached and reused."""
-        client: MongoClient = MongoClient(
-            self._connection_string, datetime_conversion=self._datetime_conversion, **self._options
-        )
+        options = {"datetime_conversion": self._datetime_conversion, **self._options}
+        client: MongoClient = MongoClient(self._connection_string, connect=False, **options)
+        # A keyword argument overrides the connection string, so set the UUID representation only when it sets none
+        if client.codec_options.uuid_representation == UuidRepresentation.UNSPECIFIED:
+            client = MongoClient(self._connection_string, uuidRepresentation="standard", **options)
         try:
             server_info: dict[str, Any] = client.server_info()
             version_array: list[int] = server_info["versionArray"]

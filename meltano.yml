@@ -48,6 +48,7 @@ plugins:
         MongoDB connection string. See
         https://www.mongodb.com/docs/manual/reference/connection-string/#connection-string-uri-format for specification.
         The password included in this string should be url-encoded. The tap will not url-encode it.
+        UUIDs decode with the `standard` representation unless the connection string sets `uuidRepresentation`.
       sensitive: true
     - name: username
       kind: string
