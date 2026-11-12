@@ -6,6 +6,7 @@ import io
 import json
 import os
 from contextlib import redirect_stdout
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pyarrow as pa
@@ -194,3 +195,14 @@ def test_arrow_batches_leave_documents_inserted_during_the_read_to_the_change_st
     monkeypatch.undo()
     resumed, _, _ = _sync(collection, state, batch_config=batch_config)
     assert [(r["operation_type"], r["object_id"]) for r in resumed] == [("insert", str(during))]
+
+
+def test_arrow_batches_key_each_row_like_the_change_events_for_any_id_type(collection, tmp_path):
+    collection.insert_many([{"_id": id_} for id_ in [datetime(2024, 1, 1, tzinfo=timezone.utc), {"a": 1}, "z", 5]])
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
+    records, state, _ = _sync(collection, batch_config=batch_config)
+
+    collection.update_many({}, {"$set": {"n": 1}})
+    resumed, _, _ = _sync(collection, state, batch_config=batch_config)
+
+    assert sorted(r["object_id"] for r in resumed) == sorted(r["object_id"] for r in records)

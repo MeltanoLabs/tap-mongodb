@@ -423,8 +423,14 @@ class ArrowExtractor:
             hexes = object_id_hex(object_ids)
             table = {"replication_key": incremental_ids(object_ids, hexes), "object_id": hexes}
         else:
+            # A change event keys its row with `str(_id)`, so the row it replaces must have the same key
+            object_ids = (
+                fields["_id"].cast(pa.string())
+                if "_id" in plan.native
+                else pa.array([str(document["_id"]) for document in documents], type=pa.string())
+            )
             # No replication key, so a document never becomes the bookmark
-            table = {"replication_key": pa.nulls(rows, pa.string()), "object_id": fields["_id"].cast(pa.string())}
+            table = {"replication_key": pa.nulls(rows, pa.string()), "object_id": object_ids}
         if self.declared is None:
             table["document"] = pa.StructArray.from_arrays(list(fields.values()), names=list(fields))
         else:
