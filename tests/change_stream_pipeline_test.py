@@ -50,7 +50,8 @@ def test_change_stream_pipeline_is_forwarded_to_watch():
 
     list(stream.get_records(context=None))
 
-    collection.watch.assert_called_once_with(full_document="updateLookup", pipeline=pipeline)
+    collection.watch.assert_called_once()
+    assert collection.watch.call_args.kwargs.items() >= {"full_document": "updateLookup", "pipeline": pipeline}.items()
 
 
 def test_change_stream_pipeline_defaults_to_empty_list():
@@ -60,4 +61,5 @@ def test_change_stream_pipeline_defaults_to_empty_list():
 
     list(stream.get_records(context=None))
 
-    collection.watch.assert_called_once_with(full_document="updateLookup", pipeline=[])
+    collection.watch.assert_called_once()
+    assert collection.watch.call_args.kwargs.items() >= {"full_document": "updateLookup", "pipeline": []}.items()

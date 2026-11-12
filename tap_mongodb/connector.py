@@ -113,13 +113,14 @@ class MongoDBConnector:  # pylint: disable=too-many-instance-attributes
             tap_stream_id=unique_stream_id,
             stream=unique_stream_id,
             table=collection_name,
-            key_properties=["replication_key"],
+            # One row per document: a change event replaces the row of the document it changed
+            key_properties=["object_id"],
             schema=Schema.from_dict(schema),
             replication_method=None,  # Must be defined by user
             metadata=MetadataMapping.get_standard_metadata(
                 schema=schema,
                 replication_method=REPLICATION_INCREMENTAL,  # User can override this
-                key_properties=["replication_key"],
+                key_properties=["object_id"],
                 valid_replication_keys=["replication_key"],  # Known valid replication keys
             ),
             database=database_name,
