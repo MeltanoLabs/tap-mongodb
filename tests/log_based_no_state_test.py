@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pyarrow as pa
 import pytest
+from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 
@@ -167,3 +168,29 @@ def test_no_state_with_arrow_batches_writes_every_document_then_reads_changes(co
     monkeypatch.undo()
     resumed, _, _ = _sync(collection, state, batch_config=batch_config)
     assert [(r["operation_type"], r["object_id"], "message" in r) for r in resumed] == [("insert", during, False)]
+
+
+def test_arrow_batches_leave_documents_inserted_during_the_read_to_the_change_stream(collection, tmp_path, monkeypatch):
+    # More than one raw batch, so the insert comes before the cursor reaches the end. The `_id` types are mixed, and
+    # the newest `_id` is the ObjectId, which sorts after every string.
+    existing = [*_ids(150), ObjectId()]
+    collection.insert_many([{"_id": id_, "n": 1} for id_ in existing])
+    during = ObjectId()
+
+    def insert_then_table(self, *args, **kwargs):
+        if not collection.find_one({"_id": during}):
+            collection.insert_one({"_id": during, "n": "one"})
+        return table(self, *args, **kwargs)
+
+    table = ArrowExtractor._table
+    monkeypatch.setattr(ArrowExtractor, "_table", insert_then_table)
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
+
+    records, state, _ = _sync(collection, batch_config=batch_config)
+
+    assert len(records) == len(existing)
+    assert all(r["document"]["n"] == 1 for r in records)
+
+    monkeypatch.undo()
+    resumed, _, _ = _sync(collection, state, batch_config=batch_config)
+    assert [(r["operation_type"], r["object_id"]) for r in resumed] == [("insert", str(during))]

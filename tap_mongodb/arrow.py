@@ -342,8 +342,9 @@ class ArrowExtractor:
     def all_tables(self, cluster_time: datetime) -> Iterator[pa.Table]:
         """Yield every document, in `_id` order, as Arrow tables of a LOG_BASED stream's records.
 
-        A document changed during the read can differ from what the read returns. The change stream read after it
-        replaces its row.
+        The read is bounded by the newest `_id` when it starts, as in `tables`, so a document inserted during the read
+        can't bring fields or types the type scan didn't see. A document changed during the read can differ from what
+        the read returns. The change stream read after it brings the inserts and replaces the changed rows.
 
         Args:
             cluster_time: The cluster time from before the read, which every row gets as its `cluster_time`.
@@ -351,7 +352,12 @@ class ArrowExtractor:
         Yields:
             One table per raw batch returned by the server.
         """
-        yield from self._tables({}, cluster_time=cluster_time)
+        newest = self.collection.find_one({}, {"_id": 1}, sort=[("_id", DESCENDING)], session=self.session)
+        if newest is None:
+            return
+
+        # `$expr` compares across BSON types, unlike a `$lte` query, which would skip every `_id` of another type
+        yield from self._tables({"$expr": {"$lte": ["$_id", newest["_id"]]}}, cluster_time=cluster_time)
 
     def _tables(self, query: dict[str, Any], *, cluster_time: datetime | None) -> Iterator[pa.Table]:
         """Yield the documents matching `query`, in `_id` order, as Arrow tables.
