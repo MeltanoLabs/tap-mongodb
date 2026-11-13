@@ -62,7 +62,8 @@ _HEX_DIGITS = np.frombuffer(b"0123456789abcdef", dtype=np.uint8)
 _NAMESPACE_TYPE = pa.struct([("database", pa.string()), ("collection", pa.string())])
 _TIMESTAMP_TYPE = pa.timestamp("us", tz="UTC")
 
-# Arrow types of the declared kinds whose values are not emitted as JSON, matching `DocumentPlan.from_declared`
+# Arrow types of the declared kinds whose values are not emitted as JSON. pymongoarrow decodes a date straight to the
+# UTC timestamp.
 _DECLARED_TYPES: dict[str, pa.DataType] = {
     "integer": pa.int64(),
     "number": pa.float64(),
@@ -150,12 +151,7 @@ class DocumentPlan:
         for declared in fields:
             seen = field_types.get(declared.name, set()) - {"null", "missing"}
             if declared.kind in {"integer", "number", "boolean", "date-time"}:
-                plan.native[declared.name] = {
-                    "integer": pa.int64(),
-                    "number": pa.float64(),
-                    "boolean": pa.bool_(),
-                    "date-time": pa.timestamp("ms"),
-                }[declared.kind]
+                plan.native[declared.name] = _DECLARED_TYPES[declared.kind]
             elif declared.kind == "string" and seen <= {"string"}:
                 plan.native[declared.name] = pa.string()
             elif declared.kind == "string" and seen == {"objectId"}:
