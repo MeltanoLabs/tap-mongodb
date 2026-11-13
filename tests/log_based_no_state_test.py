@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pyarrow as pa
 import pytest
-from bson import Binary, DatetimeMS, ObjectId
+from bson import Binary, DatetimeMS, Decimal128, Int64, ObjectId
 from bson.binary import UuidRepresentation
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
@@ -19,6 +19,7 @@ from pymongo.errors import PyMongoError
 from tap_mongodb.arrow import ArrowExtractor
 from tap_mongodb.streams import MongoDBCollectionStream
 from tap_mongodb.tap import TapMongoDB
+from tests.arrow_test import _normalize_batch_document, _with_sql_nulls
 
 MONGODB_URI = os.environ.get("TAP_MONGODB_TEST_CONNECTION_STRING", "mongodb://admin:password@localhost:27017/")
 
@@ -39,11 +40,16 @@ def collection():
 
 
 def _sync(
-    collection, state: dict | None = None, batch_config: dict | None = None, uri: str = MONGODB_URI
+    collection,
+    state: dict | None = None,
+    batch_config: dict | None = None,
+    uri: str = MONGODB_URI,
+    declared: dict | None = None,
 ) -> tuple[list[dict], dict, list[str]]:
     """Sync the collection with LOG_BASED replication, and return its records, final state and key properties.
 
-    The records include the rows of Arrow batch files, where the message has a `BATCH` type.
+    The records include the rows of Arrow batch files, where the message has a `BATCH` type. `declared` fields select
+    the flat document layout.
     """
     config = {
         "mongodb_connection_string": uri,
@@ -56,6 +62,9 @@ def _sync(
     (stream,) = catalog["streams"]
     stream["replication_method"] = "LOG_BASED"
     next(entry for entry in stream["metadata"] if not entry["breadcrumb"])["metadata"]["selected"] = True
+    if declared:
+        stream["schema"]["properties"].update(declared)
+        config["document_layout"] = "flat"
 
     buf = io.StringIO()
     with redirect_stdout(buf):
@@ -134,16 +143,83 @@ def test_documents_are_keyed_on_id_and_a_quiet_sync_emits_no_row(collection):
     assert [(r["operation_type"], r["object_id"]) for r in resumed] == [("insert", after)]
 
 
-def test_update_of_a_since_deleted_document_keeps_its_id(collection):
+@pytest.mark.parametrize("arrow", [False, True], ids=["records", "arrow"])
+def test_update_of_a_since_deleted_document_keeps_its_id(collection, tmp_path, arrow):
     (id_,) = _ids(1)
     collection.insert_one({"_id": id_})
     _, state, _ = _sync(collection)
     collection.update_one({"_id": id_}, {"$set": {"status": "sent"}})
     collection.delete_one({"_id": id_})
 
-    resumed, _, _ = _sync(collection, state)
+    # One row per file, so the update has a file with only a null document
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}, "batch_size": 1}
+    resumed, _, _ = _sync(collection, state, batch_config=batch_config if arrow else None)
 
-    assert [(r["operation_type"], r["object_id"]) for r in resumed] == [("update", id_), ("delete", id_)]
+    assert [(r["operation_type"], r["object_id"], r.get("message")) for r in resumed] == [
+        ("update", id_, "BATCH" if arrow else None),
+        ("delete", id_, "BATCH" if arrow else None),
+    ]
+    assert resumed[0]["document"] is None
+
+
+def test_arrow_change_events_match_record_mode(collection, tmp_path):
+    collection.insert_one({"count": 0})
+    _, state, _ = _sync(collection)
+    first, second = collection.insert_many(
+        [
+            {
+                "count": 1,
+                "big": Int64(2),
+                "ratio": 1.5,
+                "name": "a",
+                "flag": True,
+                "at": datetime(2026, 1, 1, 12, 0, 0, 123000, tzinfo=timezone.utc),
+                "ref": ObjectId(),
+                "price": Decimal128("1.5"),
+                "nested": {"x": 1, "y": [1, "a"]},
+                "tags": [1, 2],
+                "mixed": 1,
+            },
+            {"count": 2, "mixed": "x"},
+        ]
+    ).inserted_ids
+    collection.update_one({"_id": second}, {"$set": {"name": "b"}})
+    collection.replace_one({"_id": second}, {"count": 3})
+    collection.delete_one({"_id": first})
+
+    records, record_state, _ = _sync(collection, state)
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
+    rows, row_state, _ = _sync(collection, state, batch_config=batch_config)
+
+    assert [r["operation_type"] for r in rows] == ["insert", "insert", "update", "replace", "delete"]
+    assert all(r["message"] == "BATCH" for r in rows)
+    assert row_state == record_state
+    for row, record in zip(rows, records, strict=True):
+        assert row["replication_key"] == record["replication_key"]
+        assert row["object_id"] == record["object_id"]
+        assert row["cluster_time"].isoformat() == record["cluster_time"]
+        assert row["namespace"] == record["namespace"]
+        expected = _with_sql_nulls(record["document"], list(row["document"]))
+        assert _normalize_batch_document(row["document"], {"nested", "tags", "mixed"}) == expected
+
+
+def test_arrow_change_events_with_the_flat_layout(collection, tmp_path):
+    declared = {
+        "n": {"type": ["integer", "null"]},
+        "at": {"type": ["string", "null"], "format": "date-time"},
+        "tags": {"type": ["array", "null"]},
+    }
+    collection.insert_one({"n": 0})
+    _, state, _ = _sync(collection, declared=declared)
+    at = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    collection.insert_one({"n": 1, "at": at, "tags": [1], "other": True})
+
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
+    (row,) = _sync(collection, state, batch_config=batch_config, declared=declared)[0]
+
+    assert (row["message"], row["n"], row["at"], json.loads(row["tags"])) == ("BATCH", 1, at, [1])
+    assert "document" not in row
+    assert "other" not in row
 
 
 def test_no_state_with_arrow_batches_writes_every_document_then_reads_changes(collection, tmp_path, monkeypatch):
@@ -166,10 +242,10 @@ def test_no_state_with_arrow_batches_writes_every_document_then_reads_changes(co
     assert all(r["replication_key"] is None and r["operation_type"] is None for r in records)
     assert all(r["cluster_time"] is not None for r in records)
 
-    # The bookmark predates the read, so the change made during it comes with the next sync, as a RECORD message
+    # The bookmark predates the read, so the change made during it comes with the next sync
     monkeypatch.undo()
     resumed, _, _ = _sync(collection, state, batch_config=batch_config)
-    assert [(r["operation_type"], r["object_id"], "message" in r) for r in resumed] == [("insert", during, False)]
+    assert [(r["operation_type"], r["object_id"], r["message"]) for r in resumed] == [("insert", during, "BATCH")]
 
 
 def test_arrow_batches_leave_documents_inserted_during_the_read_to_the_change_stream(collection, tmp_path, monkeypatch):

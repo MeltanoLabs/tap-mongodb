@@ -1,14 +1,17 @@
 """Native Arrow extraction for Arrow BATCH files.
 
-Documents are decoded from raw BSON batches with pymongoarrow, so most values never become Python objects. The record
-envelope (`replication_key`, `object_id`, ...) is the same as in RECORD mode. With the default `object` document layout
+Documents are decoded from raw BSON batches with pymongoarrow, so most values never become Python objects. Change events
+arrive one at a time, so their tables are built from the decoded records instead. The record envelope
+(`replication_key`, `object_id`, ...) is the same as in RECORD mode. With the default `object` document layout
 the document is a `document` struct; with the `flat` layout (see `tap_mongodb.flat`) each declared field is a column.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from itertools import islice
 from typing import TYPE_CHECKING, Any
 
 import bson
@@ -21,10 +24,10 @@ from pymongoarrow.context import PyMongoArrowContext
 from pymongoarrow.types import ObjectIdType
 from singer_sdk.singerlib.json import serialize_json
 
-from tap_mongodb.flat import DeclaredField, as_record_string, mismatch_error
+from tap_mongodb.flat import DeclaredField, _bson_type_name, as_record_string, mismatch_error
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator, Mapping
     from logging import Logger, LoggerAdapter
 
     from bson.codec_options import CodecOptions
@@ -59,6 +62,15 @@ def _silently_coerced(arrow_type: pa.DataType) -> list[str]:
 _HEX_DIGITS = np.frombuffer(b"0123456789abcdef", dtype=np.uint8)
 _NAMESPACE_TYPE = pa.struct([("database", pa.string()), ("collection", pa.string())])
 _TIMESTAMP_TYPE = pa.timestamp("us", tz="UTC")
+
+# Arrow types of the declared kinds whose values are not emitted as JSON, matching `DocumentPlan.from_declared`
+_DECLARED_TYPES: dict[str, pa.DataType] = {
+    "integer": pa.int64(),
+    "number": pa.float64(),
+    "boolean": pa.bool_(),
+    "date-time": pa.timestamp("ms", tz="UTC"),
+    "string": pa.string(),
+}
 
 
 @dataclass
@@ -425,10 +437,7 @@ class ArrowExtractor:
         self._check_silent_coercions(native, plan, documents)
 
         fields = {name: _conform(native[name].combine_chunks()) for name in plan.native}
-        for name in plan.as_string:
-            fields[name] = pa.array([as_record_string(doc.get(name)) for doc in documents], type=pa.string())
-        for name in plan.as_json:
-            fields[name] = pa.array([_as_json(doc.get(name)) for doc in documents], type=pa.json_())
+        fields.update(_python_fields(documents, plan))
 
         rows = len(fields["_id"])
         if cluster_time is None:
@@ -461,6 +470,69 @@ class ArrowExtractor:
             table["_sdc_extracted_at"] = now
             table["_sdc_batched_at"] = now
         return pa.table(table)
+
+    def change_tables(self, records: Iterable[dict[str, Any]], batch_size: int) -> Iterator[pa.Table]:
+        """Yield the change records of a LOG_BASED stream as Arrow tables of `batch_size` rows.
+
+        Each table is one batch file. A field's type comes from the documents in its own table, so it can differ
+        between files, and the SDK never has to concatenate tables whose types conflict.
+
+        Args:
+            records: The stream's records, after `post_process`.
+            batch_size: The rows per table. The last table can be smaller.
+
+        Yields:
+            Tables with the same columns as the tables of `all_tables`.
+        """
+        records = iter(records)
+        while chunk := list(islice(records, batch_size)):
+            yield self._change_table(chunk)
+
+    def _change_table(self, records: list[dict[str, Any]]) -> pa.Table:
+        table = {
+            "replication_key": pa.array([record["replication_key"] for record in records], type=pa.string()),
+            "object_id": pa.array([record["object_id"] for record in records], type=pa.string()),
+        }
+        if self.declared is None:
+            table["document"] = self._document_struct([record["document"] for record in records])
+        else:
+            # `post_process` already converted the declared fields and checked their types
+            table.update(
+                (declared.name, _declared_array([record[declared.name] for record in records], declared))
+                for declared in self.declared
+            )
+        table |= {
+            "operation_type": pa.array([record["operation_type"] for record in records], type=pa.string()),
+            "cluster_time": pa.array(
+                [datetime.fromisoformat(record["cluster_time"]) for record in records], type=_TIMESTAMP_TYPE
+            ),
+            "namespace": pa.array([record["namespace"] for record in records], type=_NAMESPACE_TYPE),
+        }
+        if self.add_record_metadata:
+            for name in ("_sdc_extracted_at", "_sdc_batched_at", "_sdc_deleted_at"):
+                table[name] = pa.array([record.get(name) for record in records], type=_TIMESTAMP_TYPE)
+        return pa.table(table)
+
+    def _document_struct(self, documents: list[Mapping[str, Any] | None]) -> pa.StructArray:
+        """Convert decoded documents to a `document` struct, with the field types that `_table` gives them."""
+        field_types: dict[str, set[str]] = defaultdict(set)
+        for document in documents:
+            for name, value in (document or {}).items():
+                field_types[name].add(_bson_type_name(value))
+        plan = DocumentPlan.from_field_types(field_types, stream_name=self.stream_name, logger=self.logger)
+
+        present = [document or {} for document in documents]
+        fields = {}
+        for name, arrow_type in plan.native.items():
+            values = [document.get(name) for document in present]
+            if isinstance(arrow_type, ObjectIdType):
+                fields[name] = pa.array([None if value is None else str(value) for value in values], type=pa.string())
+            else:
+                fields[name] = _conform(pa.array(values, type=arrow_type))
+        fields.update(_python_fields(present, plan))
+        return pa.StructArray.from_arrays(
+            list(fields.values()), names=list(fields), mask=pa.array([document is None for document in documents])
+        )
 
     def _check_silent_coercions(self, native: pa.Table, plan: DocumentPlan, documents: list[dict[str, Any]]) -> None:
         """Fail if a numeric column got a value pymongoarrow coerces silently instead of raising `TypeError`.
@@ -507,6 +579,23 @@ def _has_type(name: str, types: list[str]) -> dict[str, Any]:
         field_value = {"$getField": {"field": {"$literal": name}, "input": "$$ROOT"}}
         return {"$expr": {"$in": [{"$type": field_value}, types]}}
     return {name: {"$type": types}}
+
+
+def _python_fields(documents: list[Mapping[str, Any]], plan: DocumentPlan) -> dict[str, pa.Array]:
+    """Convert the fields that pymongoarrow doesn't decode, from the decoded documents."""
+    fields = {}
+    for name in plan.as_string:
+        fields[name] = pa.array([as_record_string(doc.get(name)) for doc in documents], type=pa.string())
+    for name in plan.as_json:
+        fields[name] = pa.array([_as_json(doc.get(name)) for doc in documents], type=pa.json_())
+    return fields
+
+
+def _declared_array(values: list[Any], declared: DeclaredField) -> pa.Array:
+    """Convert the values that `flatten_document` gives a declared field."""
+    if declared.kind in _DECLARED_TYPES:
+        return pa.array(values, type=_DECLARED_TYPES[declared.kind])
+    return pa.array([_as_json(value) for value in values], type=pa.json_())
 
 
 def _conform(column: pa.Array) -> pa.Array:
