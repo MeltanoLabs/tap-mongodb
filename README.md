@@ -31,7 +31,7 @@ The tap supports two replication modes:
 
 ## Arrow BATCH mode
 
-Setting `batch_config` with the `arrow` format makes INCREMENTAL streams write [Apache Arrow](https://arrow.apache.org/) IPC files and emit [Singer BATCH messages](https://sdk.meltano.com/en/latest/batch.html) instead of one RECORD message per document. Documents are decoded from raw BSON with [PyMongoArrow](https://www.mongodb.com/docs/languages/python/pymongo-arrow-driver/current/), so most values never become Python objects.
+Setting `batch_config` with the `arrow` format makes `INCREMENTAL` and `LOG_BASED` streams write [Apache Arrow](https://arrow.apache.org/) IPC files and emit [Singer `BATCH` messages](https://sdk.meltano.com/en/latest/batch.html) instead of one `RECORD` message per document. Documents are decoded from raw BSON with [PyMongoArrow](https://www.mongodb.com/docs/languages/python/pymongo-arrow-driver/current/), so most values never become Python objects.
 
 ```json
 {
@@ -45,7 +45,9 @@ Setting `batch_config` with the `arrow` format makes INCREMENTAL streams write [
 
 `batch_size` defaults to 100,000 rows per file, and `storage.root` to a `singer-sdk` folder in the OS temp directory. One `BATCH` message lists the files for up to 1,000,000 rows, so a target can load them together. A `STATE` message follows each `BATCH` message, so an interrupted sync resumes after the last message written.
 
-A `LOG_BASED` stream with no state writes every document to Arrow files, and then stores a resume token from before the read as its bookmark. The sync ends there, and the next sync reads the changes made since as `RECORD` messages. An interrupted sync reads every document again. A change made during the read can come again with the next sync, and replaces the document's row.
+A `LOG_BASED` stream with no state writes every document to Arrow files, and then stores a resume token from before the read as its bookmark. The sync ends there, and the next sync reads the changes made since. An interrupted sync reads every document again. A change made during the read can come again with the next sync, and replaces the document's row.
+
+A `LOG_BASED` stream with state writes its change events to Arrow files, with the same fields. Change events arrive one at a time, so no scan can type their documents in advance: `document` is JSON, with the same value as in `RECORD` mode. With the [flat document layout](#flat-document-layout), the declared fields are typed columns, as in the first read.
 
 Records have the same fields as in RECORD mode, with `document` as an Arrow struct. Before extracting, the tap scans the BSON types of each top-level document field, and converts each field as follows:
 
@@ -93,7 +95,7 @@ Property names are the documents' top-level field names. The record envelope (`r
 | `object`, `array` | sub-document, array | JSON |
 | any other declaration, e.g. `[integer, string]` | any | JSON |
 
-- **Type mismatches fail the sync**, naming the field and a document: e.g. a double in an `integer` field. With Arrow batches, the tap checks the declared fields' types in the sync's range before writing any file, so nothing is written for a failing sync.
+- **Type mismatches fail the sync**, naming the field and a document: e.g. a double in an `integer` field. With Arrow batches, the tap checks the declared fields' types in the sync's range before writing any file, so nothing is written for a failing sync. Change events are checked as they are read, so the files written before the mismatch remain.
 - **Undeclared fields are dropped**, with a warning naming them.
 - **Missing fields are null**, like explicit `null` values.
 - **Deselected fields** aren't extracted or checked.
@@ -131,7 +133,7 @@ uv tool install git+https://github.com/MeltanoLabs/tap-mongodb.git@main
 | allow_modify_change_streams              | boolean      |  False   |                False                | In AWS DocumentDB (unlike MongoDB), change streams must be enabled specifically (see the [documentation here](https://docs.aws.amazon.com/documentdb/latest/developerguide/change_streams.html#change_streams-enabling) ). If attempting to open a change stream against a collection on which change streams have not been enabled, an OperationFailure error will be raised. If this property is set to True, when this error is seen, the tap will execute an admin command to enable change streams and then retry the read operation. Note: this may incur new costs in AWS DocumentDB. |
 | operation_types                          | list(string) |  False   | create,delete,insert,replace,update | List of MongoDB change stream operation types to include in tap output. The default behavior is to limit to document-level operation types. See full list of operation types in [the MongoDB documentation](https://www.mongodb.com/docs/manual/reference/change-events/#operation-types). Note that the list of allowed_values for this property includes some values not available to all MongoDB versions.                                                                                                                                                                                |                                                                                                                                                                               |
 | change_stream_pipeline                   | list(object) |  False   |                  []                 | Optional list of MongoDB aggregation pipeline stages appended to the change stream (passed as the `pipeline` argument to `collection.watch()`). Only used in LOG_BASED replication mode. Can be used to reduce event size server-side to avoid MongoDB's 16MB BSON limit - e.g. `[{"$unset": "updateDescription"}]` drops a field the tap never reads - or for server-side filtering via `$match`, complementing `operation_types`. No validation is performed; a pipeline that removes `_id`, `operationType`, `clusterTime`, `ns`, or both `fullDocument`/`documentKey` will cause tap errors. |
-| batch_config                             | object       |  False   |                  -                  | Opts into Singer BATCH messages. With `encoding.format: arrow`, incremental streams write Apache Arrow IPC files decoded straight from BSON. See [Arrow BATCH mode](#arrow-batch-mode). |
+| batch_config                             | object       |  False   |                  -                  | Opts into Singer `BATCH` messages. With `encoding.format: arrow`, `INCREMENTAL` and `LOG_BASED` streams write Apache Arrow IPC files. See [Arrow BATCH mode](#arrow-batch-mode). |
 | document_layout                          | string       |  False   |               object                | `object` emits each document as a single `document` object. `flat` emits each document field declared in the stream's schema as its own column. See [Flat document layout](#flat-document-layout). |
 
 ### Configure using environment variables
