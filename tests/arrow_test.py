@@ -22,7 +22,7 @@ from singer_sdk.contrib.batch_decoder_arrow import ArrowReader
 from singer_sdk.helpers._batch import BaseBatchFileEncoding
 from singer_sdk.streams.core import REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED
 
-from tap_mongodb import arrow
+from tap_mongodb import arrow, streams
 from tap_mongodb.arrow import DocumentPlan, incremental_ids, object_id_hex
 from tap_mongodb.streams import MongoDBCollectionStream
 from tap_mongodb.tap import TapMongoDB
@@ -159,8 +159,7 @@ def _sync(collection, tmp_path, *, batch: bool, state: dict | None = None) -> li
 def _batch_rows(messages: list[dict]) -> list[dict]:
     rows = []
     for message in messages:
-        if message["type"] == "BATCH":
-            (url,) = message["manifest"]
+        for url in message.get("manifest", []):
             with pa.ipc.open_file(url.removeprefix("file://")) as reader:
                 rows.extend(reader.read_all().to_pylist())
     return rows
@@ -171,8 +170,7 @@ def _target_records(messages: list[dict]) -> list[dict]:
     reader = ArrowReader(BaseBatchFileEncoding(format="arrow"))
     records = []
     for message in messages:
-        if message["type"] == "BATCH":
-            (url,) = message["manifest"]
+        for url in message.get("manifest", []):
             with open(url.removeprefix("file://"), "rb") as file:
                 records.extend(reader.read(file))
     return records
@@ -255,16 +253,16 @@ def test_arrow_batches_match_record_mode(collection, tmp_path, caplog: pytest.Lo
         assert _normalize_batch_document(document, set()) == _with_sql_nulls(record["document"], list(document))
 
 
-def test_arrow_batches_state_and_resume(collection, tmp_path):
+def test_arrow_batches_state_and_resume(collection, tmp_path, monkeypatch):
+    monkeypatch.setattr(streams, "MAX_BATCH_MESSAGE_ROWS", 200)
     collection.insert_many([{"count": i} for i in range(250)])
 
     messages = _sync(collection, tmp_path, batch=True)
     batches = [i for i, m in enumerate(messages) if m["type"] == "BATCH"]
-    assert len(batches) == 3  # 100, 100 and 50 rows
+    assert [len(messages[i]["manifest"]) for i in batches] == [2, 1]  # 100 and 100 rows, then 50 rows
     bookmarks = [messages[i + 1]["value"]["bookmarks"][collection.name.lower()] for i in batches]
     rows = _batch_rows(messages)
     assert [b["replication_key_value"] for b in bookmarks] == [
-        rows[99]["replication_key"],
         rows[199]["replication_key"],
         rows[249]["replication_key"],
     ]

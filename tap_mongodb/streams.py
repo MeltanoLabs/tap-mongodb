@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import sys
 import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -22,6 +23,11 @@ from tap_mongodb.arrow import ArrowExtractor
 from tap_mongodb.flat import DeclaredField, declared_fields, flatten_document
 from tap_mongodb.types import IncrementalId
 
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
+
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable, Iterator, Mapping
 
@@ -36,6 +42,7 @@ if TYPE_CHECKING:
 
 DEFAULT_START_DATE: str = "1970-01-01"
 DEFAULT_ARROW_BATCH_SIZE: int = 100_000
+MAX_BATCH_MESSAGE_ROWS: int = 1_000_000
 
 
 def recursive_replace_empty_in_dict(dct):
@@ -259,6 +266,21 @@ class MongoDBCollectionStream(Stream):
             if "batch_size" not in raw:
                 config = {**config, "batch_config": {**raw, "batch_size": DEFAULT_ARROW_BATCH_SIZE}}
         return super().get_batch_config(config)
+
+    @override
+    def get_batches(self, batch_config, context=None):
+        # A target can load the files of one `BATCH` message together, e.g. with one merge. The SDK writes `STATE` after
+        # each message, while this generator is paused after the last file of it, so a bookmark never covers a file
+        # that no message lists yet.
+        files_per_message = max(1, MAX_BATCH_MESSAGE_ROWS // batch_config.batch_size)
+        manifest = []
+        for encoding, files in super().get_batches(batch_config, context):
+            manifest.extend(files)
+            if len(manifest) >= files_per_message:
+                yield encoding, manifest
+                manifest = []
+        if manifest:
+            yield encoding, manifest
 
     def _check_object_ids(self, collection: Collection) -> None:
         """Fail if an `_id` isn't an ObjectId, as incremental replication can't extract that document."""
