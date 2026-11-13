@@ -9,17 +9,17 @@ from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from uuid import uuid4
 
-import pyarrow as pa
 import pytest
 from bson import Binary, DatetimeMS, Decimal128, Int64, ObjectId
 from bson.binary import UuidRepresentation
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
+from singer_sdk.contrib.batch_decoder_arrow import ArrowReader
+from singer_sdk.helpers._batch import BaseBatchFileEncoding
 
 from tap_mongodb.arrow import ArrowExtractor
 from tap_mongodb.streams import MongoDBCollectionStream
 from tap_mongodb.tap import TapMongoDB
-from tests.arrow_test import _normalize_batch_document, _with_sql_nulls
 
 MONGODB_URI = os.environ.get("TAP_MONGODB_TEST_CONNECTION_STRING", "mongodb://admin:password@localhost:27017/")
 
@@ -48,8 +48,8 @@ def _sync(
 ) -> tuple[list[dict], dict, list[str]]:
     """Sync the collection with LOG_BASED replication, and return its records, final state and key properties.
 
-    The records include the rows of Arrow batch files, where the message has a `BATCH` type. `declared` fields select
-    the flat document layout.
+    The records include the rows of Arrow batch files, read as SDK targets read them, where the message has a `BATCH`
+    type. `declared` fields select the flat document layout.
     """
     config = {
         "mongodb_connection_string": uri,
@@ -71,13 +71,14 @@ def _sync(
         TapMongoDB(config=config, catalog=catalog, state=state, parse_env_config=False).sync_all()
     messages = [json.loads(line) for line in buf.getvalue().splitlines()]
     records = []
+    encoding = BaseBatchFileEncoding(format="arrow")
     for message in messages:
         if message["type"] == "RECORD":
             records.append(message["record"])
         elif message["type"] == "BATCH":
             (url,) = message["manifest"]
-            with pa.ipc.open_file(url.removeprefix("file://")) as reader:
-                records.extend({**row, "message": "BATCH"} for row in reader.read_all().to_pylist())
+            with open(url.removeprefix("file://"), "rb") as file:
+                records.extend({**row, "message": "BATCH"} for row in ArrowReader(encoding).read(file))
     final_state = next(message["value"] for message in reversed(messages) if message["type"] == "STATE")
     key_properties = next(message["key_properties"] for message in messages if message["type"] == "SCHEMA")
     return records, final_state, key_properties
@@ -151,8 +152,7 @@ def test_update_of_a_since_deleted_document_keeps_its_id(collection, tmp_path, a
     collection.update_one({"_id": id_}, {"$set": {"status": "sent"}})
     collection.delete_one({"_id": id_})
 
-    # One row per file, so the update has a file with only a null document
-    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}, "batch_size": 1}
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
     resumed, _, _ = _sync(collection, state, batch_config=batch_config if arrow else None)
 
     assert [(r["operation_type"], r["object_id"], r.get("message")) for r in resumed] == [
@@ -195,12 +195,9 @@ def test_arrow_change_events_match_record_mode(collection, tmp_path):
     assert all(r["message"] == "BATCH" for r in rows)
     assert row_state == record_state
     for row, record in zip(rows, records, strict=True):
-        assert row["replication_key"] == record["replication_key"]
-        assert row["object_id"] == record["object_id"]
-        assert row["cluster_time"].isoformat() == record["cluster_time"]
-        assert row["namespace"] == record["namespace"]
-        expected = _with_sql_nulls(record["document"], list(row["document"]))
-        assert _normalize_batch_document(row["document"], {"nested", "tags", "mixed"}) == expected
+        del row["message"]
+        row["cluster_time"] = row["cluster_time"].isoformat()
+        assert row == record
 
 
 def test_arrow_change_events_with_the_flat_layout(collection, tmp_path):
@@ -217,7 +214,7 @@ def test_arrow_change_events_with_the_flat_layout(collection, tmp_path):
     batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
     (row,) = _sync(collection, state, batch_config=batch_config, declared=declared)[0]
 
-    assert (row["message"], row["n"], row["at"], json.loads(row["tags"])) == ("BATCH", 1, at, [1])
+    assert (row["message"], row["n"], row["at"], row["tags"]) == ("BATCH", 1, at, [1])
     assert "document" not in row
     assert "other" not in row
 

@@ -217,8 +217,6 @@ def _convert(value: Any, field: DeclaredField, document: Mapping[str, Any], stre
 
 def _bson_type_name(value: Any) -> str:
     """Name a decoded value's BSON type as the `$type` aggregation operator does."""
-    if value is None:
-        return "null"
     if isinstance(value, bool):
         return "bool"
     if isinstance(value, int):

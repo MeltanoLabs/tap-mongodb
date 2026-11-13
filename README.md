@@ -47,7 +47,7 @@ Setting `batch_config` with the `arrow` format makes `INCREMENTAL` and `LOG_BASE
 
 A `LOG_BASED` stream with no state writes every document to Arrow files, and then stores a resume token from before the read as its bookmark. The sync ends there, and the next sync reads the changes made since. An interrupted sync reads every document again. A change made during the read can come again with the next sync, and replaces the document's row.
 
-A `LOG_BASED` stream with state writes its change events to Arrow files, with the same fields. Change events arrive one at a time, so there is no scan: each file takes the types of the documents in it, and a field's Arrow type can differ between files.
+A `LOG_BASED` stream with state writes its change events to Arrow files, with the same fields. Change events arrive one at a time, so no scan can type their documents in advance: `document` is JSON, with the same value as in `RECORD` mode. With the [flat document layout](#flat-document-layout), the declared fields are typed columns, as in the first read.
 
 Records have the same fields as in RECORD mode, with `document` as an Arrow struct. Before extracting, the tap scans the BSON types of each top-level document field, and converts each field as follows:
 
