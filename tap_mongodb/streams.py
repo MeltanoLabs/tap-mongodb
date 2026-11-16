@@ -496,10 +496,12 @@ class MongoDBCollectionStream(Stream):
                     change_stream.resume_token,
                 )
                 while change_stream.alive and keep_open:
-                    # Check for idle timeout
+                    # With a resume token, the first empty `try_next()` saves the token and ends the loop, however long
+                    # opening the stream took. Ending here first would keep a stale bookmark, which makes the next
+                    # open slower still.
                     current_time = time.time()
                     idle_duration = current_time - last_record_time
-                    if idle_duration >= idle_timeout_seconds:
+                    if change_stream.resume_token is None and idle_duration >= idle_timeout_seconds:
                         self.logger.info(
                             "Change stream idle for %.1f seconds (timeout: %.1f seconds). Ending stream.",
                             idle_duration,
