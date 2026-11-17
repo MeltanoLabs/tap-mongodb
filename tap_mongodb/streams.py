@@ -249,22 +249,10 @@ class MongoDBCollectionStream(Stream):
                 yield record_message
 
     def get_batch_config(self, config: Mapping) -> BatchConfig | None:
-        """Return the batch config, or None to emit RECORD messages.
-
-        With the Arrow format, a LOG_BASED stream writes Arrow files only for the documents it reads when it has no
-        bookmark. Its change events emit RECORD messages: they arrive one at a time and are already small. The default
-        `batch_size` for Arrow is raised to 100,000 rows per file.
-        """
+        """Return the batch config, with the default `batch_size` for Arrow raised to 100,000 rows per file."""
         raw = config.get("batch_config") or {}
-        if (raw.get("encoding") or {}).get("format") == "arrow":
-            reads_documents = self.replication_method == REPLICATION_INCREMENTAL or (
-                self.replication_method == REPLICATION_LOG_BASED
-                and "replication_key_value" not in self.get_context_state(None)
-            )
-            if not reads_documents:
-                return None
-            if "batch_size" not in raw:
-                config = {**config, "batch_config": {**raw, "batch_size": DEFAULT_ARROW_BATCH_SIZE}}
+        if (raw.get("encoding") or {}).get("format") == "arrow" and "batch_size" not in raw:
+            config = {**config, "batch_config": {**raw, "batch_size": DEFAULT_ARROW_BATCH_SIZE}}
         return super().get_batch_config(config)
 
     @override
@@ -297,8 +285,8 @@ class MongoDBCollectionStream(Stream):
     def get_record_batches(self, context: dict | None) -> Iterable[pa.Table] | None:
         """Return the stream's documents as Arrow tables, for Arrow BATCH files.
 
-        Incremental replication and a LOG_BASED stream with no bookmark produce Arrow data; see `tap_mongodb.arrow`
-        for how documents are converted.
+        Incremental replication and a LOG_BASED stream with no bookmark read the documents; a LOG_BASED stream with a
+        bookmark converts its change records. See `tap_mongodb.arrow` for how documents are converted.
         """
         if self.replication_method not in {REPLICATION_INCREMENTAL, REPLICATION_LOG_BASED}:
             return None
@@ -313,7 +301,10 @@ class MongoDBCollectionStream(Stream):
         if self.is_flat_layout:
             extractor.declared, extractor.deselected = self._selected_declared_fields()
         if self.replication_method == REPLICATION_LOG_BASED:
-            return self._extract_all_tables(collection, extractor, context)
+            if self.get_starting_replication_key_value(context) is None:
+                return self._extract_all_tables(collection, extractor, context)
+            records = (self.post_process(record, context) for record in self.get_records(context))
+            return extractor.change_tables(records, self.get_batch_config(self.config).batch_size)
 
         bookmark: str | None = self.get_starting_replication_key_value(context)
         start = to_object_id(bookmark or self.config.get("start_date", DEFAULT_START_DATE))
@@ -325,8 +316,8 @@ class MongoDBCollectionStream(Stream):
     ) -> Iterator[pa.Table]:
         """Yield every document as Arrow tables, then store a resume token from before the read as the bookmark.
 
-        The sync ends with the documents. The next one reads the changes made since the token as RECORD messages,
-        which can repeat a change that the read already saw.
+        The sync ends with the documents. The next one reads the changes made since the token, which can repeat a
+        change that the read already saw.
         """
         with self._connector.mongo_client.start_session() as session:
             with collection.watch(session=session) as change_stream:

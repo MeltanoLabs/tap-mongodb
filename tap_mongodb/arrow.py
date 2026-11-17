@@ -1,7 +1,8 @@
 """Native Arrow extraction for Arrow BATCH files.
 
-Documents are decoded from raw BSON batches with pymongoarrow, so most values never become Python objects. The record
-envelope (`replication_key`, `object_id`, ...) is the same as in RECORD mode. With the default `object` document layout
+Documents are decoded from raw BSON batches with pymongoarrow, so most values never become Python objects. Change events
+arrive one at a time, so their tables are built from the decoded records instead. The record envelope
+(`replication_key`, `object_id`, ...) is the same as in RECORD mode. With the default `object` document layout
 the document is a `document` struct; with the `flat` layout (see `tap_mongodb.flat`) each declared field is a column.
 """
 
@@ -9,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from itertools import islice
 from typing import TYPE_CHECKING, Any
 
 import bson
@@ -24,7 +26,7 @@ from singer_sdk.singerlib.json import serialize_json
 from tap_mongodb.flat import DeclaredField, as_record_string, mismatch_error
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
     from logging import Logger, LoggerAdapter
 
     from bson.codec_options import CodecOptions
@@ -59,6 +61,16 @@ def _silently_coerced(arrow_type: pa.DataType) -> list[str]:
 _HEX_DIGITS = np.frombuffer(b"0123456789abcdef", dtype=np.uint8)
 _NAMESPACE_TYPE = pa.struct([("database", pa.string()), ("collection", pa.string())])
 _TIMESTAMP_TYPE = pa.timestamp("us", tz="UTC")
+
+# Arrow types of the declared kinds whose values are not emitted as JSON. pymongoarrow decodes a date straight to the
+# UTC timestamp.
+_DECLARED_TYPES: dict[str, pa.DataType] = {
+    "integer": pa.int64(),
+    "number": pa.float64(),
+    "boolean": pa.bool_(),
+    "date-time": pa.timestamp("ms", tz="UTC"),
+    "string": pa.string(),
+}
 
 
 @dataclass
@@ -139,12 +151,7 @@ class DocumentPlan:
         for declared in fields:
             seen = field_types.get(declared.name, set()) - {"null", "missing"}
             if declared.kind in {"integer", "number", "boolean", "date-time"}:
-                plan.native[declared.name] = {
-                    "integer": pa.int64(),
-                    "number": pa.float64(),
-                    "boolean": pa.bool_(),
-                    "date-time": pa.timestamp("ms"),
-                }[declared.kind]
+                plan.native[declared.name] = _DECLARED_TYPES[declared.kind]
             elif declared.kind == "string" and seen <= {"string"}:
                 plan.native[declared.name] = pa.string()
             elif declared.kind == "string" and seen == {"objectId"}:
@@ -461,6 +468,40 @@ class ArrowExtractor:
             table["_sdc_extracted_at"] = now
             table["_sdc_batched_at"] = now
         return pa.table(table)
+
+    def change_tables(self, records: Iterable[dict[str, Any]], batch_size: int) -> Iterator[pa.Table]:
+        """Yield the change records of a LOG_BASED stream as Arrow tables of `batch_size` rows.
+
+        No scan can type the documents of change events in advance, so `document` is JSON, as in RECORD mode. With the
+        flat layout, the declared fields have the same columns as in `all_tables`.
+
+        Args:
+            records: The stream's records, after `post_process`.
+            batch_size: The rows per table. The last table can be smaller.
+
+        Yields:
+            One table per batch file.
+        """
+        columns = {"replication_key": pa.string(), "object_id": pa.string()}
+        if self.declared is None:
+            columns["document"] = pa.json_()
+        else:
+            columns.update(
+                (declared.name, _DECLARED_TYPES.get(declared.kind, pa.json_())) for declared in self.declared
+            )
+        columns |= {"operation_type": pa.string(), "cluster_time": _TIMESTAMP_TYPE, "namespace": _NAMESPACE_TYPE}
+        if self.add_record_metadata:
+            columns |= dict.fromkeys(("_sdc_extracted_at", "_sdc_batched_at", "_sdc_deleted_at"), _TIMESTAMP_TYPE)
+        schema = pa.schema(columns.items())
+        json_columns = [name for name, arrow_type in columns.items() if arrow_type == pa.json_()]
+
+        records = iter(records)
+        while chunk := list(islice(records, batch_size)):
+            for record in chunk:
+                record["cluster_time"] = datetime.fromisoformat(record["cluster_time"])
+                for name in json_columns:
+                    record[name] = _as_json(record.get(name))
+            yield pa.Table.from_pylist(chunk, schema=schema)
 
     def _check_silent_coercions(self, native: pa.Table, plan: DocumentPlan, documents: list[dict[str, Any]]) -> None:
         """Fail if a numeric column got a value pymongoarrow coerces silently instead of raising `TypeError`.

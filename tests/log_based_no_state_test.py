@@ -9,12 +9,13 @@ from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from uuid import uuid4
 
-import pyarrow as pa
 import pytest
-from bson import Binary, DatetimeMS, ObjectId
+from bson import Binary, DatetimeMS, Decimal128, Int64, ObjectId
 from bson.binary import UuidRepresentation
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
+from singer_sdk.contrib.batch_decoder_arrow import ArrowReader
+from singer_sdk.helpers._batch import BaseBatchFileEncoding
 
 from tap_mongodb.arrow import ArrowExtractor
 from tap_mongodb.streams import MongoDBCollectionStream
@@ -39,11 +40,16 @@ def collection():
 
 
 def _sync(
-    collection, state: dict | None = None, batch_config: dict | None = None, uri: str = MONGODB_URI
+    collection,
+    state: dict | None = None,
+    batch_config: dict | None = None,
+    uri: str = MONGODB_URI,
+    declared: dict | None = None,
 ) -> tuple[list[dict], dict, list[str]]:
     """Sync the collection with LOG_BASED replication, and return its records, final state and key properties.
 
-    The records include the rows of Arrow batch files, where the message has a `BATCH` type.
+    The records include the rows of Arrow batch files, read as SDK targets read them, where the message has a `BATCH`
+    type. `declared` fields select the flat document layout.
     """
     config = {
         "mongodb_connection_string": uri,
@@ -56,19 +62,23 @@ def _sync(
     (stream,) = catalog["streams"]
     stream["replication_method"] = "LOG_BASED"
     next(entry for entry in stream["metadata"] if not entry["breadcrumb"])["metadata"]["selected"] = True
+    if declared:
+        stream["schema"]["properties"].update(declared)
+        config["document_layout"] = "flat"
 
     buf = io.StringIO()
     with redirect_stdout(buf):
         TapMongoDB(config=config, catalog=catalog, state=state, parse_env_config=False).sync_all()
     messages = [json.loads(line) for line in buf.getvalue().splitlines()]
     records = []
+    encoding = BaseBatchFileEncoding(format="arrow")
     for message in messages:
         if message["type"] == "RECORD":
             records.append(message["record"])
         elif message["type"] == "BATCH":
             (url,) = message["manifest"]
-            with pa.ipc.open_file(url.removeprefix("file://")) as reader:
-                records.extend({**row, "message": "BATCH"} for row in reader.read_all().to_pylist())
+            with open(url.removeprefix("file://"), "rb") as file:
+                records.extend({**row, "message": "BATCH"} for row in ArrowReader(encoding).read(file))
     final_state = next(message["value"] for message in reversed(messages) if message["type"] == "STATE")
     key_properties = next(message["key_properties"] for message in messages if message["type"] == "SCHEMA")
     return records, final_state, key_properties
@@ -134,16 +144,79 @@ def test_documents_are_keyed_on_id_and_a_quiet_sync_emits_no_row(collection):
     assert [(r["operation_type"], r["object_id"]) for r in resumed] == [("insert", after)]
 
 
-def test_update_of_a_since_deleted_document_keeps_its_id(collection):
+@pytest.mark.parametrize("arrow", [False, True], ids=["records", "arrow"])
+def test_update_of_a_since_deleted_document_keeps_its_id(collection, tmp_path, arrow):
     (id_,) = _ids(1)
     collection.insert_one({"_id": id_})
     _, state, _ = _sync(collection)
     collection.update_one({"_id": id_}, {"$set": {"status": "sent"}})
     collection.delete_one({"_id": id_})
 
-    resumed, _, _ = _sync(collection, state)
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
+    resumed, _, _ = _sync(collection, state, batch_config=batch_config if arrow else None)
 
-    assert [(r["operation_type"], r["object_id"]) for r in resumed] == [("update", id_), ("delete", id_)]
+    assert [(r["operation_type"], r["object_id"], r.get("message")) for r in resumed] == [
+        ("update", id_, "BATCH" if arrow else None),
+        ("delete", id_, "BATCH" if arrow else None),
+    ]
+    assert resumed[0]["document"] is None
+
+
+def test_arrow_change_events_match_record_mode(collection, tmp_path):
+    collection.insert_one({"count": 0})
+    _, state, _ = _sync(collection)
+    first, second = collection.insert_many(
+        [
+            {
+                "count": 1,
+                "big": Int64(2),
+                "ratio": 1.5,
+                "name": "a",
+                "flag": True,
+                "at": datetime(2026, 1, 1, 12, 0, 0, 123000, tzinfo=timezone.utc),
+                "ref": ObjectId(),
+                "price": Decimal128("1.5"),
+                "nested": {"x": 1, "y": [1, "a"]},
+                "tags": [1, 2],
+                "mixed": 1,
+            },
+            {"count": 2, "mixed": "x"},
+        ]
+    ).inserted_ids
+    collection.update_one({"_id": second}, {"$set": {"name": "b"}})
+    collection.replace_one({"_id": second}, {"count": 3})
+    collection.delete_one({"_id": first})
+
+    records, record_state, _ = _sync(collection, state)
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
+    rows, row_state, _ = _sync(collection, state, batch_config=batch_config)
+
+    assert [r["operation_type"] for r in rows] == ["insert", "insert", "update", "replace", "delete"]
+    assert all(r["message"] == "BATCH" for r in rows)
+    assert row_state == record_state
+    for row, record in zip(rows, records, strict=True):
+        del row["message"]
+        row["cluster_time"] = row["cluster_time"].isoformat()
+        assert row == record
+
+
+def test_arrow_change_events_with_the_flat_layout(collection, tmp_path):
+    declared = {
+        "n": {"type": ["integer", "null"]},
+        "at": {"type": ["string", "null"], "format": "date-time"},
+        "tags": {"type": ["array", "null"]},
+    }
+    collection.insert_one({"n": 0})
+    _, state, _ = _sync(collection, declared=declared)
+    at = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    collection.insert_one({"n": 1, "at": at, "tags": [1], "other": True})
+
+    batch_config = {"encoding": {"format": "arrow"}, "storage": {"root": f"file://{tmp_path}"}}
+    (row,) = _sync(collection, state, batch_config=batch_config, declared=declared)[0]
+
+    assert (row["message"], row["n"], row["at"], row["tags"]) == ("BATCH", 1, at, [1])
+    assert "document" not in row
+    assert "other" not in row
 
 
 def test_no_state_with_arrow_batches_writes_every_document_then_reads_changes(collection, tmp_path, monkeypatch):
@@ -166,10 +239,10 @@ def test_no_state_with_arrow_batches_writes_every_document_then_reads_changes(co
     assert all(r["replication_key"] is None and r["operation_type"] is None for r in records)
     assert all(r["cluster_time"] is not None for r in records)
 
-    # The bookmark predates the read, so the change made during it comes with the next sync, as a RECORD message
+    # The bookmark predates the read, so the change made during it comes with the next sync
     monkeypatch.undo()
     resumed, _, _ = _sync(collection, state, batch_config=batch_config)
-    assert [(r["operation_type"], r["object_id"], "message" in r) for r in resumed] == [("insert", during, False)]
+    assert [(r["operation_type"], r["object_id"], r["message"]) for r in resumed] == [("insert", during, "BATCH")]
 
 
 def test_arrow_batches_leave_documents_inserted_during_the_read_to_the_change_stream(collection, tmp_path, monkeypatch):
